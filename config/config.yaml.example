@@ -1,0 +1,111 @@
+engines:
+  v8:
+    enabled: true
+    binary: /opt/v8/v8/out/x64.release/d8
+    asan_binary: /opt/v8/v8/out/x64.asan/d8
+    snapshot: /opt/v8fuzz/snapshot_release.bin
+    workers: 4
+    timeout_ms: 5000
+    flags:
+      - --allow-natives-syntax
+      - --expose-gc
+      - --harmony
+    target: google_vrp
+
+  jsc:
+    enabled: false   # Azure VMでのみ有効化
+    binary: /opt/jsc/jsc
+    asan_binary: /opt/jsc/jsc-asan
+    workers: 4
+    timeout_ms: 5000
+    flags:
+      - --useDFGJIT=true
+      - --useFTLJIT=true
+    target: apple_bounty
+
+ai:
+  gemini:
+    accounts:
+      - api_key: "GEMINI_API_KEY_1"
+        daily_limit: 250
+      - api_key: "GEMINI_API_KEY_2"
+        daily_limit: 250
+    model: "gemini-2.5-flash"
+    batch_size: 3
+    seeds_per_request: 20
+
+  allocation:
+    seed_generation: 200
+    risk_analysis: 100
+    crash_triage: 100
+    vrp_report: 10
+    reserve: 90
+
+corpus:
+  base_dir: /opt/v8fuzz/corpus
+  max_size: 50000
+  similarity_threshold: 0.8
+  retire_after_days: 30
+  min_coverage_gain: 0.001
+
+scheduler:
+  algorithm: ucb1
+  exploration_factor: 1.41
+  rebalance_interval: 3600
+
+workers:
+  explorer: 0.4
+  sniper: 0.4
+  differ: 0.2
+
+crash:
+  dedup_window: 5
+  min_reproduce_count: 3
+  asan_verify: true
+
+triage:
+  vrp_rules_url: "https://bughunters.google.com/about/rules/chrome-friends/5745167867576320"
+  commit_age_min_days: 8
+  auto_minimize: true
+  auto_bisect: true
+  auto_patch: true
+
+notification:
+  resend_api_key: "RESEND_API_KEY"
+  from_email: "v8fuzz@yourdomain.com"
+  to_email: "your@gmail.com"
+  thresholds:
+    immediate: 8.0
+    daily_summary: 0.0
+  daily_summary_hour: 9
+
+api:
+  worker_url: "https://v8fuzz.yourdomain.workers.dev"
+  secret: "YOUR_API_SECRET"
+
+commit_watcher:
+  v8_repo: "https://chromium.googlesource.com/v8/v8"
+  jsc_repo: "https://github.com/WebKit/WebKit"
+  check_interval: 3600
+  golden_zone_days:
+    min: 8
+    max: 30
+
+gerrit:
+  enabled: true
+  url: "https://chromium-review.googlesource.com"
+  keywords:
+    - "dangerous"
+    - "edge case"
+    - "TODO"
+    - "FIXME"
+    - "this assumes"
+    - "not sure"
+    - "might be wrong"
+    - "hack"
+    - "workaround"
+
+infra:
+  tmpfs_dir: /tmp/fuzz
+  log_dir: /opt/v8fuzz/logs
+  db_path: /opt/v8fuzz/db/fuzz.db

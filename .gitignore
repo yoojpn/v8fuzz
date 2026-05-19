@@ -1,0 +1,7 @@
+config/config.yaml
+*.pyc
+__pycache__/
+/opt/
+.env
+*.log
+db/

@@ -1,0 +1,10 @@
+name = "v8fuzz"
+main = "webui/worker.js"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[vars]
+API_SECRET = "YOUR_API_SECRET"
