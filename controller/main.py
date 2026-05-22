@@ -142,6 +142,9 @@ class V8FuzzController:
                 seeds = await self.scheduler.select(
                     self.corpus_v8, count=1000
                 )
+                if not seeds:
+                    await asyncio.sleep(5)
+                    continue
                 crashes = await self.workers_v8.run_batch(seeds)
 
                 if crashes:
@@ -160,6 +163,9 @@ class V8FuzzController:
                 seeds = await self.scheduler.select(
                     self.corpus_jsc, count=1000
                 )
+                if not seeds:
+                    await asyncio.sleep(5)
+                    continue
                 crashes = await self.workers_jsc.run_batch(seeds)
 
                 if crashes:
