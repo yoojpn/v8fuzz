@@ -83,8 +83,9 @@ def generate():
 class GeminiClient:
     """Gemini APIクライアント（複数アカウントローテーション）"""
 
-    def __init__(self, accounts: List[dict]):
+    def __init__(self, accounts: List[dict], model: str = "gemini-3.5-flash"):
         self.accounts = accounts
+        self.model    = model
         self.current  = 0
         self.usage    = {i: 0 for i in range(len(accounts))}
 
@@ -99,7 +100,7 @@ class GeminiClient:
         api_key = account['api_key']
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.5-flash:generateContent?key={api_key}"
+            f"{self.model}:generateContent?key={api_key}"
         )
 
         payload = {
@@ -150,7 +151,7 @@ class GeminiClient:
 class SeedGenerator:
     def __init__(self, config: dict):
         self.config  = config
-        self.gemini  = GeminiClient(config['ai']['gemini']['accounts'])
+        self.gemini  = GeminiClient(config['ai']['gemini']['accounts'], model=config['ai']['gemini'].get('model', 'gemini-3.5-flash'))
         self.batch   = config['ai']['gemini'].get('batch_size', 3)
         self.per_req = config['ai']['gemini'].get('seeds_per_request', 20)
 
