@@ -179,7 +179,7 @@ class SeedGenerator:
                 prompt = self._build_batch_prompt(engine, batch_num=i)
                 log.debug(f"  [{engine}] Calling Gemini API (batch {i})...")
                 response = await self.gemini.generate(prompt, system)
-                log.debug(f"  [{engine}] Gemini responded ({len(response)} chars)")
+                log.debug(f"  [{engine}] Gemini responded ({len(response)} chars): {response[:200]!r}")
                 generators = self._extract_generators(response)
                 log.debug(f"  [{engine}] Extracted {len(generators)} generator(s)")
 
