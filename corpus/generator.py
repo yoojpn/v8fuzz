@@ -100,15 +100,48 @@ class GeminiClient:
     # リクエスト間の最小間隔 (秒) = 60 / RPM + 余裕1秒
     MIN_INTERVAL = 60.0 / RPM_LIMIT + 1.0  # ~7s
 
+    # 使用量永続化ファイル（再起動後も累積を維持）
+    USAGE_FILE = Path('/opt/v8fuzz/logs/gemini_daily_usage.json')
+
     def __init__(self, accounts: List[dict], model: str = "gemini-2.5-flash"):
         self.accounts = accounts
         self.model    = model
 
-        # アカウントごとの状態管理
         n = len(accounts)
-        self.usage        = [0] * n           # 今日の使用数
-        self.blocked_until= [0.0] * n         # Epoch秒。これ以前はブロック
-        self.last_call    = [0.0] * n         # 最後にAPIを叩いた時刻
+        self.blocked_until = [0.0] * n
+        self.last_call     = [0.0] * n
+
+        # 使用量をファイルから復元（再起動後も累積を維持）
+        self.usage = self._load_usage(n)
+
+    def _load_usage(self, n: int) -> list:
+        """ファイルから今日の使用量を読み込む。日付が変わっていたら0にリセット。"""
+        import datetime, json
+        today = datetime.date.today().isoformat()
+        try:
+            if self.USAGE_FILE.exists():
+                data = json.loads(self.USAGE_FILE.read_text())
+                if data.get('date') == today:
+                    usage = data.get('usage', [0] * n)
+                    # アカウント数が変わった場合に備えてpadding
+                    while len(usage) < n:
+                        usage.append(0)
+                    log.info(f"Restored daily usage from file: {usage} (date={today})")
+                    return usage[:n]
+        except Exception as e:
+            log.warning(f"Failed to load usage file: {e}")
+        log.info(f"Starting fresh daily usage counter for {today}")
+        return [0] * n
+
+    def _save_usage(self):
+        """今日の使用量をファイルへ書き出す。"""
+        import datetime, json
+        today = datetime.date.today().isoformat()
+        try:
+            self.USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self.USAGE_FILE.write_text(json.dumps({'date': today, 'usage': self.usage}))
+        except Exception as e:
+            log.warning(f"Failed to save usage file: {e}")
 
     # ------------------------------------------------------------------ #
     # 内部ユーティリティ
@@ -116,6 +149,14 @@ class GeminiClient:
 
     def _pick_account(self) -> Optional[int]:
         """ブロックされておらず daily_limit 未満のアカウントを使用数が少ない順に返す"""
+        # 日付が変わっていたら使用量をリセット
+        import datetime
+        today = datetime.date.today().isoformat()
+        saved = self._load_usage(len(self.accounts))
+        # _load_usageが今日付けのデータを返す場合はそのまま使う
+        # 日付が変わっていれば0リセット済みのリストが返ってくる
+        self.usage = saved
+
         now = time.monotonic()
         candidates = []
         for i, acc in enumerate(self.accounts):
@@ -211,6 +252,7 @@ class GeminiClient:
 
                         data = await resp.json()
                         self.usage[idx] += 1
+                        self._save_usage()
                         backoff = 15.0  # 成功したらバックオフをリセット
                         return data['candidates'][0]['content']['parts'][0]['text']
 
