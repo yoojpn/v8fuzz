@@ -324,8 +324,12 @@ CVE情報:
 
         generators = []
         for block in blocks:
-            # generate() 関数が含まれているか確認
-            if 'def generate()' in block and 'yield' in block:
+            if 'yield' not in block:
+                continue
+            # generate()以外の関数名にも対応: 最初のdef xxx()をgenerate()にリネーム
+            if 'def generate()' not in block:
+                block = re.sub(r'def (\w+)\(\):', 'def generate():', block, count=1)
+            if 'def generate()' in block:
                 generators.append(block)
 
         return generators
