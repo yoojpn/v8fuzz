@@ -132,8 +132,8 @@ class SeedGenerator:
     def __init__(self, config: dict):
         self.config  = config
         self.gemini  = GeminiClient(config['ai']['gemini']['accounts'])
-        self.batch   = config['ai']['batch_size']       # 1 req に詰める仮説数
-        self.per_req = config['ai']['seeds_per_request']
+        self.batch   = config['ai']['gemini'].get('batch_size', 3)
+        self.per_req = config['ai']['gemini'].get('seeds_per_request', 20)
 
         # 生成済みジェネレーターをキャッシュ
         self._generators_v8:  List = []
