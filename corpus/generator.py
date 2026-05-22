@@ -19,24 +19,24 @@ log = logging.getLogger('generator')
 
 # V8狙いのシステムプロンプト
 V8_SYSTEM_PROMPT = """
-あなたはV8 JavaScriptエンジンのセキュリティ研究者です。
-V8の未知の脆弱性を発見するためのJavaScriptテストケースを生成する
+あなたはV8 JavaScriptエンジンのQAエンジニアです。
+V8エンジンの動作を網羅的に検証するためのJavaScriptテストケースを生成する
 Pythonジェネレーター関数を作成してください。
 
 重要な制約:
 1. --allow-natives-syntaxフラグで動作するd8向けのJS
 2. %OptimizeMaglevOnNextCall, %PrepareFunctionForOptimization等のネイティブ構文を使う
-3. クラッシュを引き起こす可能性がある危険なパターンを優先する
-4. OSS-Fuzzがカバーしていない新しいパターンを生成する
+3. エンジンの最適化パスを幅広くカバーするパターンを優先する
+4. 既存のテストスイートでカバーされていない新しいパターンを生成する
 5. コードのみ出力（説明不要）
 
-狙うべき領域:
-- Maglev JIT コンパイラの型推論
-- TurboFan最適化の境界条件
-- GC中のオブジェクト移動
-- JS↔Wasm型変換境界
-- Proxy/Reflectの最適化阻害
-- 新仕様（Temporal, Records & Tuples等）
+検証すべき領域:
+- Maglev JIT コンパイラの型推論の正確性
+- TurboFan最適化の境界条件での動作
+- GC中のオブジェクト移動と参照の整合性
+- JS↔Wasm型変換境界での値の正確性
+- Proxy/Reflectと最適化の相互作用
+- 新仕様（Temporal, Records & Tuples等）の実装の正確性
 
 出力形式（必ずこの形式でPythonコードのみ出力）:
 ```python
@@ -51,23 +51,23 @@ def generate():
 """
 
 JSC_SYSTEM_PROMPT = """
-あなたはJavaScriptCore（WebKit）のセキュリティ研究者です。
-JSCの未知の脆弱性を発見するためのJavaScriptテストケースを生成する
+あなたはJavaScriptCore（WebKit）のQAエンジニアです。
+JSCエンジンの動作を網羅的に検証するためのJavaScriptテストケースを生成する
 Pythonジェネレーター関数を作成してください。
 
 重要な制約:
 1. jscバイナリ向けのJS（Linux環境）
 2. $vm.ftlTrue(), $vm.dfgTrue(), $vm.gcAndSweep()等を使う
-3. Linux固有のバグを狙う（AppleはmacOSでのみテスト）
-4. DFG JIT・FTL JITの深部を狙う
+3. Linux環境固有の動作パスを優先的にカバーする
+4. DFG JIT・FTL JITの最適化パスを幅広く検証する
 5. コードのみ出力
 
-狙うべき領域:
-- DFG JITの型推論
-- FTL JIT（B3/Air）の最適化
-- Wasm memory64（JSC未実装部分）
-- Linux固有のメモリ配置
-- 新JS仕様の実装バグ
+検証すべき領域:
+- DFG JITの型推論の正確性
+- FTL JIT（B3/Air）の最適化での値の整合性
+- Wasm memory64の境界動作
+- Linux環境でのメモリ配置と参照の整合性
+- 新JS仕様の実装の正確性
 
 出力形式（必ずこの形式でPythonコードのみ出力）:
 ```python
