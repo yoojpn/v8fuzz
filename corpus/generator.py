@@ -308,7 +308,24 @@ CVE情報:
 仮説:
 {chr(10).join(selected)}
 
-各ジェネレーターは独立したPython関数として出力してください。
+必ず{self.batch}個の独立した```python```コードブロックを出力してください。
+各ブロックに1つのdef generate()関数を含めてください。
+ブロックをまとめたり、1つにしないでください。
+
+例（2つの場合）:
+```python
+import random
+def generate():
+    while True:
+        yield "// test1"
+```
+
+```python
+import random
+def generate():
+    while True:
+        yield "// test2"
+```
 """
 
     def _extract_generators(self, response: str) -> List[str]:
