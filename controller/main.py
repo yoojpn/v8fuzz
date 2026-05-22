@@ -25,7 +25,6 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler('/opt/v8fuzz/logs/service.log'),
-        logging.FileHandler('/opt/v8fuzz/logs/controller.log'),
     ]
 )
 log = logging.getLogger('controller')
