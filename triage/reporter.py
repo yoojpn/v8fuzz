@@ -180,55 +180,99 @@ This vulnerability could allow an attacker to:
         self, crash: dict, analysis: dict, report_md: str
     ):
         """即時メール通知（CRITICAL: CVSS 8.0以上）"""
-        cvss    = analysis.get('cvss', 0.0)
-        engine  = crash.get('engine', 'v8').upper()
-        est_min = analysis.get('estimated_reward_min', 0)
-        est_max = analysis.get('estimated_reward_max', 0)
+        cvss      = analysis.get('cvss', 0.0)
+        est_min   = analysis.get('estimated_reward_min', 0)
+        est_max   = analysis.get('estimated_reward_max', 0)
+        poc       = (crash.get('minimized_code') or crash.get('js_code', ''))[:800]
+        minimized = '&#10003; ' + 'Minimized' if crash.get('minimized_code') else '&#8987; Pending'
+        bisect    = crash.get('bisect_commit', '')[:8] if crash.get('bisect_commit') else '&#8987; Pending'
+        now       = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
 
         subject = (
-            f"[CRITICAL] {crash['id']} {engine} "
-            f"{analysis.get('crash_type','?')} CVSS{cvss}"
+            f"[CRITICAL] {crash['id']} · "
+            f"{analysis.get('crash_type','?')} · "
+            f"CVSS {cvss}"
         )
 
-        html = f"""
-<div style="font-family: monospace; max-width: 600px;">
-  <h2 style="color: #d73a49;">🔴 新規クラッシュ検出</h2>
+        html = f"""<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:20px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.06);">
 
-  <table style="border-collapse: collapse; width: 100%;">
-    <tr><td style="padding: 6px; color: #666;">ID</td>
-        <td style="padding: 6px;"><b>{crash['id']}</b></td></tr>
-    <tr><td style="padding: 6px; color: #666;">エンジン</td>
-        <td style="padding: 6px;">{engine}</td></tr>
-    <tr><td style="padding: 6px; color: #666;">種別</td>
-        <td style="padding: 6px;">{analysis.get('crash_type','?')}</td></tr>
-    <tr><td style="padding: 6px; color: #666;">CVSS</td>
-        <td style="padding: 6px; color: #d73a49;"><b>{cvss}</b></td></tr>
-    <tr><td style="padding: 6px; color: #666;">推定報奨金</td>
-        <td style="padding: 6px; color: #28a745;">
-          <b>${est_min:,} ~ ${est_max:,}</b></td></tr>
-    <tr><td style="padding: 6px; color: #666;">最小化</td>
-        <td style="padding: 6px;">
-          {'✅ 完了' if crash.get('minimized_code') else '⏳ 処理中'}</td></tr>
-    <tr><td style="padding: 6px; color: #666;">Bisect</td>
-        <td style="padding: 6px;">
-          {crash.get('bisect_commit','⏳ 処理中')}</td></tr>
-  </table>
+  <!-- ヘッダー -->
+  <div style="background:#0f0f0f;padding:24px 32px;display:flex;align-items:center;justify-content:space-between;">
+    <span style="color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.05em;">v8fuzz</span>
+    <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:3px 12px;border-radius:100px;letter-spacing:0.08em;">CRITICAL</span>
+  </div>
 
-  <h3>最小化済みPoC</h3>
-  <pre style="background: #f6f8fa; padding: 12px; border-radius: 6px;
-              overflow-x: auto; font-size: 12px;">
-{(crash.get('minimized_code') or crash.get('js_code',''))[:1000]}
-  </pre>
+  <div style="padding:32px;">
 
-  <p>
-    <a href="{self.config['api']['worker_url']}/crashes/{crash['id']}"
-       style="background: #d73a49; color: white; padding: 8px 16px;
-              border-radius: 4px; text-decoration: none;">
-      ダッシュボードで確認
-    </a>
-  </p>
+    <!-- タイトル -->
+    <div style="margin-bottom:24px;">
+      <div style="font-size:11px;color:#6b7280;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;">New Crash Detected · V8</div>
+      <div style="font-size:22px;font-weight:700;color:#0f0f0f;line-height:1.3;">{analysis.get('crash_type','Unknown')}<br><span style="font-size:14px;font-weight:500;color:#6b7280;">{analysis.get('affected_component','Unknown Component')}</span></div>
+    </div>
+
+    <!-- メトリクス -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:24px;">
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;">
+        <div style="font-size:10px;color:#ef4444;font-weight:600;letter-spacing:0.08em;margin-bottom:4px;">CVSS</div>
+        <div style="font-size:26px;font-weight:800;color:#ef4444;line-height:1;">{cvss}</div>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;">
+        <div style="font-size:10px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:4px;">ID</div>
+        <div style="font-size:14px;font-weight:700;color:#0f0f0f;line-height:1;padding-top:6px;">{crash['id']}</div>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;">
+        <div style="font-size:10px;color:#16a34a;font-weight:600;letter-spacing:0.08em;margin-bottom:4px;">REWARD</div>
+        <div style="font-size:12px;font-weight:700;color:#16a34a;line-height:1;padding-top:6px;">${est_min:,}–${est_max:,}</div>
+      </div>
+    </div>
+
+    <!-- 詳細テーブル -->
+    <div style="background:#f9fafb;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:7px 0;font-size:12px;color:#6b7280;width:130px;">Exploitability</td>
+          <td style="padding:7px 0;font-size:12px;"><span style="background:#fef2f2;color:#ef4444;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">{analysis.get('exploitability','?').upper()}</span></td>
+        </tr>
+        <tr style="border-top:1px solid #e5e7eb;">
+          <td style="padding:7px 0;font-size:12px;color:#6b7280;">File</td>
+          <td style="padding:7px 0;font-size:12px;color:#0f0f0f;font-weight:500;">{crash.get('id','?')}</td>
+        </tr>
+        <tr style="border-top:1px solid #e5e7eb;">
+          <td style="padding:7px 0;font-size:12px;color:#6b7280;">Minimized</td>
+          <td style="padding:7px 0;font-size:12px;color:#16a34a;font-weight:500;">{minimized}</td>
+        </tr>
+        <tr style="border-top:1px solid #e5e7eb;">
+          <td style="padding:7px 0;font-size:12px;color:#6b7280;">Bisect</td>
+          <td style="padding:7px 0;font-size:12px;color:#0f0f0f;font-family:monospace;">{bisect}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- PoC -->
+    <div style="margin-bottom:24px;">
+      <div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:8px;">MINIMIZED POC</div>
+      <div style="background:#0f0f0f;border-radius:8px;padding:16px 20px;overflow-x:auto;">
+        <pre style="margin:0;font-size:11px;color:#22c55e;font-family:'SF Mono','Cascadia Code',monospace;line-height:1.7;white-space:pre-wrap;">{poc}</pre>
+      </div>
+    </div>
+
+    <!-- ボタン -->
+    <a href="{self.config['api']['worker_url']}/crashes/{crash['id']}" style="display:block;background:#0f0f0f;color:#ffffff;text-align:center;padding:14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:0.03em;margin-bottom:10px;">View in Dashboard →</a>
+    <a href="https://bughunters.google.com/report" style="display:block;background:#fef2f2;border:1px solid #fecaca;color:#ef4444;text-align:center;padding:12px;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;">Submit to Google VRP</a>
+  </div>
+
+  <!-- フッター -->
+  <div style="padding:16px 32px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-size:11px;color:#9ca3af;">v8fuzz · automated security research</span>
+    <span style="font-size:11px;color:#9ca3af;">{now}</span>
+  </div>
+
 </div>
-"""
+</body></html>"""
 
         await self._send_email(subject, html)
         log.info(f"Immediate notification sent: {crash['id']}")
@@ -239,73 +283,102 @@ This vulnerability could allow an attacker to:
         queue = self._daily_queue.copy()
         self._daily_queue.clear()
 
+        now     = datetime.now(timezone.utc)
+        datestr = now.strftime('%A, %B %d')
+
         subject = (
-            f"[DAILY] V8:{stats['v8_crashes']}件 / "
-            f"JSC:{stats['jsc_crashes']}件 / "
-            f"実行:{stats['total_execs']:,}回 / "
-            f"API ${stats['api_spend']:.2f}"
+            f"[DAILY] {stats['v8_crashes']} crashes · "
+            f"{stats['vrp_candidates']} VRP candidates · "
+            f"V8"
         )
 
-        crashes_html = ""
-        for item in queue[:10]:  # 最大10件
+        # VRP候補リスト
+        candidates_html = ""
+        for item in queue[:10]:
             c = item['crash']
             a = item['analysis']
-            crashes_html += f"""
-<tr>
-  <td style="padding: 6px;">{c['id']}</td>
-  <td style="padding: 6px;">{c.get('engine','?').upper()}</td>
-  <td style="padding: 6px;">{a.get('crash_type','?')}</td>
-  <td style="padding: 6px; color: {'#d73a49' if a.get('cvss',0) >= 7 else '#856404'};">
-    {a.get('cvss',0)}</td>
-  <td style="padding: 6px; color: #28a745;">
-    ${a.get('estimated_reward_min',0):,}~${a.get('estimated_reward_max',0):,}</td>
-</tr>
-"""
+            cvss  = a.get('cvss', 0)
+            color = '#ef4444' if cvss >= 8 else '#f59e0b' if cvss >= 6 else '#3b82f6'
+            bg    = '#fef2f2' if cvss >= 8 else '#fffbeb' if cvss >= 6 else '#eff6ff'
+            label = 'CRITICAL' if cvss >= 8 else 'HIGH' if cvss >= 6 else 'MEDIUM'
+            candidates_html += f"""
+        <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f3f4f6;gap:12px;">
+          <div style="width:4px;height:36px;background:{color};border-radius:2px;flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div style="font-size:12px;font-weight:600;color:#0f0f0f;">{c['id']} · {a.get('crash_type','?')}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px;">{a.get('affected_component','Unknown')}</div>
+          </div>
+          <div style="text-align:right;margin-right:8px;">
+            <div style="font-size:16px;font-weight:800;color:{color};">{cvss}</div>
+            <div style="font-size:10px;color:#6b7280;">CVSS</div>
+          </div>
+          <span style="background:{bg};color:{color};font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;">{label}</span>
+        </div>"""
 
-        html = f"""
-<div style="font-family: monospace; max-width: 700px;">
-  <h2>📊 デイリーレポート</h2>
+        no_candidates = "<div style='padding:16px;font-size:13px;color:#6b7280;text-align:center;'>本日のVRP候補はありません</div>"
 
-  <table style="border-collapse: collapse; width: 100%;">
-    <tr><td style="padding: 6px; color: #666;">V8 実行数</td>
-        <td style="padding: 6px;">{stats['v8_execs']:,} 回</td></tr>
-    <tr><td style="padding: 6px; color: #666;">JSC 実行数</td>
-        <td style="padding: 6px;">{stats['jsc_execs']:,} 回</td></tr>
-    <tr><td style="padding: 6px; color: #666;">V8 クラッシュ</td>
-        <td style="padding: 6px;">{stats['v8_crashes']} 件</td></tr>
-    <tr><td style="padding: 6px; color: #666;">JSC クラッシュ</td>
-        <td style="padding: 6px;">{stats['jsc_crashes']} 件</td></tr>
-    <tr><td style="padding: 6px; color: #666;">VRP候補</td>
-        <td style="padding: 6px; color: #28a745;">
-          <b>{stats['vrp_candidates']} 件</b></td></tr>
-    <tr><td style="padding: 6px; color: #666;">API消費</td>
-        <td style="padding: 6px;">${stats['api_spend']:.2f}</td></tr>
-  </table>
+        html = f"""<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:20px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.06);">
 
-  {f'''
-  <h3>VRP候補 ({len(queue)}件)</h3>
-  <table style="border-collapse: collapse; width: 100%;
-                border: 1px solid #e1e4e8;">
-    <tr style="background: #f6f8fa;">
-      <th style="padding: 6px; text-align: left;">ID</th>
-      <th style="padding: 6px; text-align: left;">Engine</th>
-      <th style="padding: 6px; text-align: left;">Type</th>
-      <th style="padding: 6px; text-align: left;">CVSS</th>
-      <th style="padding: 6px; text-align: left;">推定報奨金</th>
-    </tr>
-    {crashes_html}
-  </table>
-  ''' if queue else '<p>本日のVRP候補: なし</p>'}
+  <!-- ヘッダー -->
+  <div style="background:#0f0f0f;padding:24px 32px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <span style="color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.05em;">v8fuzz</span>
+      <span style="background:#374151;color:#9ca3af;font-size:10px;font-weight:600;padding:3px 10px;border-radius:100px;letter-spacing:0.08em;">DAILY REPORT</span>
+    </div>
+    <div style="font-size:22px;font-weight:700;color:#ffffff;line-height:1.2;">{datestr}</div>
+    <div style="font-size:12px;color:#6b7280;margin-top:4px;">V8 · Google VRP</div>
+  </div>
 
-  <p>
-    <a href="{self.config['api']['worker_url']}"
-       style="background: #0366d6; color: white; padding: 8px 16px;
-              border-radius: 4px; text-decoration: none;">
-      ダッシュボードを開く
-    </a>
-  </p>
+  <div style="padding:32px;">
+
+    <!-- KPI -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px;">
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;">
+        <div style="font-size:10px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:6px;">EXECUTIONS</div>
+        <div style="font-size:20px;font-weight:800;color:#0f0f0f;">{stats['v8_execs']:,}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">today</div>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;">
+        <div style="font-size:10px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:6px;">NEW SEEDS</div>
+        <div style="font-size:20px;font-weight:800;color:#0f0f0f;">10,000</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">via Gemini</div>
+      </div>
+      <div style="border:1px solid {'#fecaca' if stats['v8_crashes'] > 0 else '#e5e7eb'};background:{'#fef2f2' if stats['v8_crashes'] > 0 else '#f9fafb'};border-radius:8px;padding:16px 20px;">
+        <div style="font-size:10px;color:{'#ef4444' if stats['v8_crashes'] > 0 else '#6b7280'};font-weight:600;letter-spacing:0.08em;margin-bottom:6px;">CRASHES</div>
+        <div style="font-size:20px;font-weight:800;color:{'#ef4444' if stats['v8_crashes'] > 0 else '#0f0f0f'};">{stats['v8_crashes']}</div>
+        <div style="font-size:11px;color:{'#ef4444' if stats['vrp_candidates'] > 0 else '#6b7280'};margin-top:2px;">{stats['vrp_candidates']} VRP candidates</div>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;">
+        <div style="font-size:10px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:6px;">API SPEND</div>
+        <div style="font-size:20px;font-weight:800;color:#0f0f0f;">${stats['api_spend']:.2f}</div>
+        <div style="font-size:11px;color:#16a34a;margin-top:2px;">today</div>
+      </div>
+    </div>
+
+    <!-- VRP候補 -->
+    <div style="margin-bottom:24px;">
+      <div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.08em;margin-bottom:12px;">VRP CANDIDATES</div>
+      <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        {candidates_html if queue else no_candidates}
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <a href="{self.config['api']['worker_url']}" style="display:block;background:#0f0f0f;color:#ffffff;text-align:center;padding:14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:0.03em;">Open Dashboard →</a>
+  </div>
+
+  <!-- フッター -->
+  <div style="padding:16px 32px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-size:11px;color:#9ca3af;">v8fuzz · automated security research</span>
+    <span style="font-size:11px;color:#9ca3af;">{now.strftime('%Y-%m-%d %H:%M UTC')}</span>
+  </div>
+
 </div>
-"""
+</body></html>"""
 
         await self._send_email(subject, html)
         log.info("Daily summary sent")
