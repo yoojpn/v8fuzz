@@ -1,6 +1,6 @@
 """
 VRPReporter: クラッシュ → VRPレポート自動生成 → メール通知
-・Resendでメール送信
+・Gmail SMTPでメール送信（Resend不要）
 ・CVSS 8.0以上は即時通知
 ・それ以外は日次サマリー
 ・VRPレポートのMarkdown草稿を自動生成
@@ -8,9 +8,12 @@ VRPReporter: クラッシュ → VRPレポート自動生成 → メール通知
 import asyncio
 import json
 import logging
+import smtplib
 import sqlite3
 import time
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
 
 import aiohttp
@@ -308,31 +311,31 @@ This vulnerability could allow an attacker to:
         log.info("Daily summary sent")
 
     async def _send_email(self, subject: str, html: str):
-        """Resend APIでメール送信"""
-        url = "https://api.resend.com/emails"
-        payload = {
-            "from":    self.notify['from_email'],
-            "to":      [self.notify['to_email']],
-            "subject": subject,
-            "html":    html,
-        }
-        headers = {
-            "Authorization": f"Bearer {self.notify['resend_api_key']}",
-            "Content-Type": "application/json",
-        }
+        """Gmail SMTPでメール送信"""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._send_email_sync, subject, html)
+
+    def _send_email_sync(self, subject: str, html: str):
+        """Gmail SMTP同期送信"""
+        gmail_user = self.notify['gmail_address']
+        gmail_pass = self.notify['gmail_app_password']
+        to_email   = self.notify['to_email']
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, json=payload, headers=headers, timeout=30
-                ) as resp:
-                    if resp.status == 200:
-                        log.info(f"Email sent: {subject[:50]}")
-                    else:
-                        text = await resp.text()
-                        log.error(f"Resend error {resp.status}: {text}")
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From']    = f"v8fuzz <{gmail_user}>"
+            msg['To']      = to_email
+
+            msg.attach(MIMEText(html, 'html'))
+
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                server.login(gmail_user, gmail_pass)
+                server.sendmail(gmail_user, to_email, msg.as_string())
+
+            log.info(f"Email sent: {subject[:50]}")
         except Exception as e:
-            log.error(f"Email send error: {e}")
+            log.error(f"Gmail send error: {e}")
 
     def _get_daily_stats(self) -> dict:
         """当日の統計を取得"""

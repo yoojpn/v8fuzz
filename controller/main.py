@@ -76,12 +76,37 @@ class V8FuzzController:
 
         log.info("All workers started. Running...")
 
+        # 10ヶ月自動停止タスク
+        tasks.append(asyncio.create_task(self._auto_stop_loop()))
+
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             log.info("Shutting down...")
         finally:
             self.running = False
+
+    async def _auto_stop_loop(self):
+        """10ヶ月後に自動停止（課金防止）"""
+        import subprocess
+        # 10ヶ月 = 300日
+        stop_after_seconds = 300 * 24 * 3600
+        log.info(f"Auto-stop scheduled in 300 days")
+        await asyncio.sleep(stop_after_seconds)
+
+        log.info("=== 10ヶ月経過・自動停止します ===")
+
+        # 停止前に最終サマリーメールを送信
+        try:
+            await self.reporter.send_daily_summary()
+        except Exception:
+            pass
+
+        # systemdサービスを停止してシャットダウン
+        # ※Dropletは削除しない（データ保全のため）
+        import subprocess
+        subprocess.run(['systemctl', 'stop', 'v8fuzz'], check=False)
+        subprocess.run(['shutdown', '-h', 'now'], check=False)
 
     def _check_tmpfs(self):
         """tmpfsマウント確認・未マウントなら警告"""

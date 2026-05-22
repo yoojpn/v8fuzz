@@ -71,9 +71,9 @@ triage:
   auto_patch: true
 
 notification:
-  resend_api_key: "RESEND_API_KEY"
-  from_email: "v8fuzz@yourdomain.com"
-  to_email: "your@gmail.com"
+  gmail_address: "your@gmail.com"       # 送信元Gmailアドレス
+  gmail_app_password: "xxxx xxxx xxxx xxxx"  # Googleアプリパスワード
+  to_email: "your@gmail.com"            # 受信先（同じでOK）
   thresholds:
     immediate: 8.0
     daily_summary: 0.0
