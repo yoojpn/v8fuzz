@@ -155,16 +155,22 @@ class SeedGenerator:
         for i in range(0, budget, self.batch):
             try:
                 # バッチプロンプト: 1 req に複数の仮説を詰め込む
+                log.debug(f"  [{engine}] Building prompt for batch {i}...")
                 prompt = self._build_batch_prompt(engine, batch_num=i)
+                log.debug(f"  [{engine}] Calling Gemini API (batch {i})...")
                 response = await self.gemini.generate(prompt, system)
+                log.debug(f"  [{engine}] Gemini responded ({len(response)} chars)")
                 generators = self._extract_generators(response)
+                log.debug(f"  [{engine}] Extracted {len(generators)} generator(s)")
 
-                for gen_func in generators:
+                for j, gen_func in enumerate(generators):
+                    log.debug(f"  [{engine}] Running generator {j+1}/{len(generators)}...")
                     # ジェネレーターを実行してseedを生成
                     new_seeds = self._run_generator(
                         gen_func, engine, count=self.per_req
                     )
                     seeds.extend(new_seeds)
+                    log.debug(f"  [{engine}] Generator {j+1} produced {len(new_seeds)} seeds")
 
                 log.info(
                     f"  Batch {i}: {len(generators)} generators → "
@@ -202,13 +208,16 @@ class SeedGenerator:
 """
 
         try:
+            log.debug(f"Calling Gemini for commit {commit['hash'][:8]}...")
             response = await self.gemini.generate(prompt, system)
+            log.debug(f"Gemini responded ({len(response)} chars)")
             generators = self._extract_generators(response)
+            log.debug(f"Extracted {len(generators)} generator(s) for commit")
             seeds = []
             for gen_func in generators:
-                seeds.extend(
-                    self._run_generator(gen_func, engine, count=50)
-                )
+                new_seeds = self._run_generator(gen_func, engine, count=50)
+                seeds.extend(new_seeds)
+                log.debug(f"  Generator produced {len(new_seeds)} seeds")
             log.info(
                 f"Commit-targeted seeds: {commit['hash'][:8]} → "
                 f"{len(seeds)} seeds"
@@ -315,10 +324,11 @@ CVE情報:
             gen_func = namespace.get('generate')
 
             if gen_func is None:
+                log.debug("  Generator: no generate() function found, skipping")
                 return []
 
             gen = gen_func()
-            for _ in range(count):
+            for idx in range(count):
                 try:
                     js_code = next(gen)
                     if isinstance(js_code, str) and len(js_code) > 10:
@@ -330,9 +340,13 @@ CVE情報:
                             'created': time.time(),
                         })
                 except StopIteration:
+                    log.debug(f"  Generator exhausted after {idx} items")
                     break
-                except Exception:
+                except Exception as e:
+                    log.debug(f"  Generator item error: {e}")
                     continue
+
+            log.debug(f"  _run_generator: produced {len(seeds)}/{count} seeds")
 
         except Exception as e:
             log.warning(f"Generator execution error: {e}")

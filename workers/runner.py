@@ -66,6 +66,12 @@ def _run_single(args: dict) -> dict:
         crashed = result.returncode not in (0, 1)  # 0=正常, 1=JS例外
         timeout_hit = False
 
+        if crashed:
+            log.debug(
+                f"CRASH detected: seed={seed_id} rc={result.returncode} "
+                f"elapsed={elapsed:.2f}s"
+            )
+
         return {
             'seed_id':     seed_id,
             'crashed':     crashed,
@@ -169,6 +175,7 @@ class WorkerPool:
         if not seeds:
             return []
 
+        log.debug(f"[{self.engine}] run_batch: {len(seeds)} seeds")
         loop = asyncio.get_event_loop()
         tasks = []
 
@@ -184,6 +191,7 @@ class WorkerPool:
 
             # 変異体を生成
             mutants = self._mutate(seed, wtype)
+            log.debug(f"[{self.engine}] seed[{i}] {wtype}: {len(mutants)} mutants")
 
             for mutant in mutants:
                 args = {
@@ -206,17 +214,28 @@ class WorkerPool:
                     loop.run_in_executor(self.executor, fn, args)
                 )
 
+        log.debug(f"[{self.engine}] Dispatched {len(tasks)} tasks to executor")
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         crashes = []
+        errors = 0
+        timeouts = 0
         for result in results:
             if isinstance(result, Exception):
+                errors += 1
                 continue
-            if result and result.get('crashed'):
-                crash = self._process_crash(result)
-                if crash:
-                    crashes.append(crash)
+            if result:
+                if result.get('timeout'):
+                    timeouts += 1
+                if result.get('crashed'):
+                    crash = self._process_crash(result)
+                    if crash:
+                        crashes.append(crash)
 
+        log.debug(
+            f"[{self.engine}] Batch done: {len(results)} results, "
+            f"{len(crashes)} crashes, {timeouts} timeouts, {errors} errors"
+        )
         return crashes
 
     def _mutate(self, seed: dict, worker_type: str) -> List[str]:
