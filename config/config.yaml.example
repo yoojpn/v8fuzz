@@ -27,19 +27,19 @@ ai:
   gemini:
     accounts:
       - api_key: "GEMINI_API_KEY_1"
-        daily_limit: 250
+        daily_limit: 750
       - api_key: "GEMINI_API_KEY_2"
-        daily_limit: 250
+        daily_limit: 750
     model: "gemini-2.5-flash"
     batch_size: 3
-    seeds_per_request: 20
+    seeds_per_request: 200
 
   allocation:
-    seed_generation: 200
-    risk_analysis: 100
-    crash_triage: 100
+    seed_generation: 1200
+    risk_analysis: 150
+    crash_triage: 150
     vrp_report: 10
-    reserve: 90
+    reserve: 140
 
 corpus:
   base_dir: /opt/v8fuzz/corpus
