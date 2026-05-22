@@ -114,21 +114,33 @@ class GeminiClient:
         timeout = aiohttp.ClientTimeout(total=30, connect=10)
         for attempt in range(3):
             try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.post(url, json=payload) as resp:
-                        if resp.status in (429, 503):
-                            wait = 10 * (attempt + 1)
-                            log.warning(f"Gemini {resp.status}, retry {attempt+1}/3 in {wait}s")
-                            await asyncio.sleep(wait)
-                            continue
-                        if resp.status != 200:
-                            text = await resp.text()
-                            raise Exception(f"Gemini API error {resp.status}: {text}")
-                        data = await resp.json()
-                        return data['candidates'][0]['content']['parts'][0]['text']
+                async def _call():
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(url, json=payload) as resp:
+                            if resp.status in (429, 503):
+                                return resp.status, None
+                            if resp.status != 200:
+                                text = await resp.text()
+                                raise Exception(f"Gemini API error {resp.status}: {text}")
+                            return 200, await resp.json()
+
+                status, data = await asyncio.wait_for(_call(), timeout=35)
+
+                if status in (429, 503):
+                    wait = 10 * (attempt + 1)
+                    log.warning(f"Gemini {status}, retry {attempt+1}/3 in {wait}s")
+                    await asyncio.sleep(wait)
+                    continue
+
+                return data['candidates'][0]['content']['parts'][0]['text']
+
             except asyncio.TimeoutError:
-                log.warning(f"Gemini timeout (attempt {attempt+1}/3), retrying...")
+                log.warning(f"Gemini socket hang detected (attempt {attempt+1}/3), retrying...")
                 await asyncio.sleep(5)
+            except Exception as e:
+                log.error(f"Gemini error (attempt {attempt+1}/3): {e}")
+                await asyncio.sleep(5)
+
         raise Exception("Gemini API failed after 3 retries")
 
     def get_daily_usage(self) -> dict:
