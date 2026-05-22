@@ -114,24 +114,22 @@ class V8FuzzController:
         log.info(f"tmpfs dir: {tmpfs}")
 
     async def _seed_generation_loop(self):
-        """毎日AIでseedを生成する"""
+        """2時間ごとにseedを生成してcorpusへ逐次追加する。
+        generate_stream が生成のたびにcorpusへ流し込むため、
+        fuzz loopは最初のバッチが入った瞬間に動き始める。"""
         while self.running:
             try:
-                log.info("Starting daily seed generation...")
-                seeds_v8  = await self.generator.generate_batch(engine='v8')
-                seeds_jsc = await self.generator.generate_batch(engine='jsc')
-
-                # 品質ゲートを通過したseedだけ追加
-                added_v8  = await self.corpus_v8.add_seeds(seeds_v8)
-                added_jsc = await self.corpus_jsc.add_seeds(seeds_jsc)
-
-                log.info(f"Seeds added: V8={added_v8}, JSC={added_jsc}")
-
-                # 24時間待機
-                await asyncio.sleep(86400)
-
+                log.info("Starting seed generation cycle (2h window)...")
+                # v8とjscを並列で生成（互いに待たない）
+                await asyncio.gather(
+                    self.generator.generate_stream('v8',  self.corpus_v8),
+                    self.generator.generate_stream('jsc', self.corpus_jsc),
+                )
+                log.info("Seed generation cycle complete. Next cycle in 22h.")
+                # 2h生成 + 22h待機 = 24hサイクル
+                await asyncio.sleep(22 * 3600)
             except Exception as e:
-                log.error(f"Seed generation error: {e}")
+                log.error(f"Seed generation loop error: {e}")
                 await asyncio.sleep(3600)
 
     async def _v8_fuzz_loop(self):

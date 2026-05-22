@@ -81,28 +81,73 @@ def generate():
 
 
 class GeminiClient:
-    """Gemini APIクライアント（複数アカウントローテーション）"""
+    """Gemini APIクライアント（複数アカウントローテーション＋レート制限対応）
 
-    def __init__(self, accounts: List[dict], model: str = "gemini-3.5-flash"):
+    無料枠の制約:
+      - RPM (requests per minute): 10 rpm / アカウント (gemini-2.5-flash)
+      - RPD (requests per day):    1,500 rpd / アカウント
+      - TPM (tokens per minute):   250,000 tpm / アカウント
+
+    戦略:
+      1. daily_limitを24hで割って均等ペース配分 → 朝に枯渇しない
+      2. 429が来たらそのアカウントを一時ブロックし、別アカウントへ即切替
+      3. 全アカウントが塞がっていたら retry-after に従ってスリープ
+      4. 指数バックオフ（上限120s）で長時間429を回避
+    """
+
+    # 無料枠: gemini-2.5-flash は 10 RPM / アカウント
+    RPM_LIMIT = 10
+    # リクエスト間の最小間隔 (秒) = 60 / RPM + 余裕1秒
+    MIN_INTERVAL = 60.0 / RPM_LIMIT + 1.0  # ~7s
+
+    def __init__(self, accounts: List[dict], model: str = "gemini-2.5-flash"):
         self.accounts = accounts
         self.model    = model
-        self.current  = 0
-        self.usage    = {i: 0 for i in range(len(accounts))}
 
-    def _next_account(self) -> dict:
-        """使用量が少ないアカウントを選択"""
-        idx = min(self.usage, key=self.usage.get)
-        self.usage[idx] += 1
-        return self.accounts[idx]
+        # アカウントごとの状態管理
+        n = len(accounts)
+        self.usage        = [0] * n           # 今日の使用数
+        self.blocked_until= [0.0] * n         # Epoch秒。これ以前はブロック
+        self.last_call    = [0.0] * n         # 最後にAPIを叩いた時刻
+
+    # ------------------------------------------------------------------ #
+    # 内部ユーティリティ
+    # ------------------------------------------------------------------ #
+
+    def _pick_account(self) -> Optional[int]:
+        """ブロックされておらず daily_limit 未満のアカウントを使用数が少ない順に返す"""
+        now = time.monotonic()
+        candidates = []
+        for i, acc in enumerate(self.accounts):
+            limit = acc.get('daily_limit', 750)
+            if self.usage[i] >= limit:
+                continue
+            if self.blocked_until[i] > now:
+                continue
+            candidates.append(i)
+        if not candidates:
+            return None
+        # 使用量が最も少ないものを選ぶ
+        return min(candidates, key=lambda i: self.usage[i])
+
+    def _soonest_unblock(self) -> float:
+        """全アカウントがブロック中のとき、最短で解除される秒数を返す"""
+        now = time.monotonic()
+        return max(0.0, min(self.blocked_until) - now)
+
+    async def _throttle(self, idx: int):
+        """RPM制限を守るため前回呼び出しからMIN_INTERVAL秒待つ"""
+        elapsed = time.monotonic() - self.last_call[idx]
+        wait = self.MIN_INTERVAL - elapsed
+        if wait > 0:
+            log.debug(f"  [acct {idx}] RPM throttle: sleeping {wait:.1f}s")
+            await asyncio.sleep(wait)
+
+    # ------------------------------------------------------------------ #
+    # 公開API
+    # ------------------------------------------------------------------ #
 
     async def generate(self, prompt: str, system: str) -> str:
-        account = self._next_account()
-        api_key = account['api_key']
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model}:generateContent?key={api_key}"
-        )
-
         payload = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"parts": [{"text": prompt}]}],
@@ -111,99 +156,176 @@ class GeminiClient:
                 "temperature": 0.9,
             }
         }
-
         timeout = aiohttp.ClientTimeout(total=120, connect=10)
-        for attempt in range(3):
+
+        backoff = 15.0  # 初期バックオフ秒
+        max_backoff = 120.0
+
+        while True:
+            idx = self._pick_account()
+
+            if idx is None:
+                # 全アカウント使用済み or ブロック中
+                wait = self._soonest_unblock()
+                if wait > 0:
+                    log.warning(f"All accounts blocked. Waiting {wait:.0f}s for earliest unblock...")
+                    await asyncio.sleep(wait + 1)
+                else:
+                    # daily_limit超過 → 本日分の予算切れ
+                    raise Exception("Daily request budget exhausted for all accounts")
+                continue
+
+            await self._throttle(idx)
+
+            api_key = self.accounts[idx]['api_key']
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{self.model}:generateContent?key={api_key}"
+            )
+
+            self.last_call[idx] = time.monotonic()
             try:
-                async def _call():
-                    async with aiohttp.ClientSession(timeout=timeout) as session:
-                        async with session.post(url, json=payload) as resp:
-                            if resp.status in (429, 503):
-                                return resp.status, None
-                            if resp.status != 200:
-                                text = await resp.text()
-                                raise Exception(f"Gemini API error {resp.status}: {text}")
-                            return 200, await resp.json()
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload) as resp:
+                        if resp.status == 429:
+                            # retry-after ヘッダーがあればそれを使う
+                            retry_after = float(resp.headers.get("Retry-After", backoff))
+                            retry_after = min(retry_after, max_backoff)
+                            log.warning(
+                                f"[acct {idx}] 429 rate-limited. "
+                                f"Blocking for {retry_after:.0f}s, switching account."
+                            )
+                            self.blocked_until[idx] = time.monotonic() + retry_after
+                            backoff = min(backoff * 2, max_backoff)
+                            continue  # 別アカウントで再試行
 
-                status, data = await asyncio.wait_for(_call(), timeout=130)
+                        if resp.status == 503:
+                            log.warning(f"[acct {idx}] 503 unavailable. Retry in {backoff:.0f}s")
+                            await asyncio.sleep(backoff)
+                            backoff = min(backoff * 2, max_backoff)
+                            continue
 
-                if status in (429, 503):
-                    wait = 10 * (attempt + 1)
-                    log.warning(f"Gemini {status}, retry {attempt+1}/3 in {wait}s")
-                    await asyncio.sleep(wait)
-                    continue
+                        if resp.status != 200:
+                            text = await resp.text()
+                            raise Exception(f"Gemini API error {resp.status}: {text[:200]}")
 
-                return data['candidates'][0]['content']['parts'][0]['text']
+                        data = await resp.json()
+                        self.usage[idx] += 1
+                        backoff = 15.0  # 成功したらバックオフをリセット
+                        return data['candidates'][0]['content']['parts'][0]['text']
 
             except asyncio.TimeoutError:
-                log.warning(f"Gemini socket hang detected (attempt {attempt+1}/3), retrying...")
-                await asyncio.sleep(5)
+                log.warning(f"[acct {idx}] Timeout. Retry in {backoff:.0f}s")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
             except Exception as e:
-                log.error(f"Gemini error (attempt {attempt+1}/3): {e}")
-                await asyncio.sleep(5)
-
-        raise Exception("Gemini API failed after 3 retries")
+                if "budget exhausted" in str(e):
+                    raise
+                log.error(f"[acct {idx}] Unexpected error: {e}. Retry in {backoff:.0f}s")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
 
     def get_daily_usage(self) -> dict:
-        return dict(self.usage)
+        return {i: self.usage[i] for i in range(len(self.accounts))}
 
 
 class SeedGenerator:
     def __init__(self, config: dict):
         self.config  = config
-        self.gemini  = GeminiClient(config['ai']['gemini']['accounts'], model=config['ai']['gemini'].get('model', 'gemini-3.5-flash'))
+        self.gemini  = GeminiClient(
+            config['ai']['gemini']['accounts'],
+            model=config['ai']['gemini'].get('model', 'gemini-2.5-flash'),
+        )
         self.batch   = config['ai']['gemini'].get('batch_size', 3)
-        self.per_req = config['ai']['gemini'].get('seeds_per_request', 20)
+        self.per_req = config['ai']['gemini'].get('seeds_per_request', 200)
 
         # 生成済みジェネレーターをキャッシュ
         self._generators_v8:  List = []
         self._generators_jsc: List = []
 
-    async def generate_batch(self, engine: str) -> List[dict]:
+    async def generate_stream(self, engine: str, corpus) -> None:
         """
-        1日分のseedバッチを生成
-        SeedMind式: ジェネレーター関数を生成してから実行
+        seedを生成しながら即座にcorpusへ流し込む（ストリーミング生成）。
+        fuzz loopはcorpusにseedが入り次第すぐ動き始める。
+
+        ペーシング戦略:
+          seed_generation (例: 1200 req) を 2h に均等分散。
+          pace = 7200s / budget → budget=1200 なら 6秒/req。
+          RPM上限(10rpm=6s/req)とほぼ一致するので自然に収まる。
         """
         alloc  = self.config['ai']['allocation']
-        budget = alloc['seed_generation']  # req/日
-        seeds  = []
+        budget = alloc['seed_generation']  # req/サイクル
+
+        # 2h (7200s) で budget リクエストを均等に消化するペース
+        pace_interval = 7200.0 / budget
+        log.info(
+            f"[{engine}] Stream generation start: budget={budget} req, "
+            f"pace={pace_interval:.1f}s/req (2h window)"
+        )
 
         system = V8_SYSTEM_PROMPT if engine == 'v8' else JSC_SYSTEM_PROMPT
-
-        log.info(f"Generating seeds for {engine} ({budget} requests budget)")
+        total_seeds = 0
 
         for i in range(0, budget, self.batch):
             try:
-                # バッチプロンプト: 1 req に複数の仮説を詰め込む
                 log.debug(f"  [{engine}] Building prompt for batch {i}...")
-                prompt = self._build_batch_prompt(engine, batch_num=i)
+                prompt   = self._build_batch_prompt(engine, batch_num=i)
                 log.debug(f"  [{engine}] Calling Gemini API (batch {i})...")
                 response = await self.gemini.generate(prompt, system)
                 log.debug(f"  [{engine}] Gemini responded ({len(response)} chars): {response[:200]!r}")
+
                 generators = self._extract_generators(response)
                 log.debug(f"  [{engine}] Extracted {len(generators)} generator(s)")
 
+                batch_seeds = []
                 for j, gen_func in enumerate(generators):
                     log.debug(f"  [{engine}] Running generator {j+1}/{len(generators)}...")
-                    # ジェネレーターを実行してseedを生成
-                    new_seeds = self._run_generator(
-                        gen_func, engine, count=self.per_req
-                    )
-                    seeds.extend(new_seeds)
+                    new_seeds = self._run_generator(gen_func, engine, count=self.per_req)
+                    batch_seeds.extend(new_seeds)
                     log.debug(f"  [{engine}] Generator {j+1} produced {len(new_seeds)} seeds")
 
-                log.info(
-                    f"  Batch {i}: {len(generators)} generators → "
-                    f"{len(seeds)} seeds total"
-                )
+                # ★ 生成できたらすぐcorpusへ追加（fuzz loopが即座に拾う）
+                if batch_seeds:
+                    added = await corpus.add_seeds(batch_seeds)
+                    total_seeds += added
+                    log.info(
+                        f"  [{engine}] Batch {i}: {len(generators)} gen → "
+                        f"+{added} seeds (corpus total {total_seeds})"
+                    )
 
-                # レート制限対策
-                await asyncio.sleep(0.5)
+                # RPM制限はGeminiClient内で管理。ここでは2h均等分散のペースを守る
+                pace = max(0.0, pace_interval * self.batch - GeminiClient.MIN_INTERVAL * self.batch)
+                if pace > 0:
+                    log.debug(f"  [{engine}] Pacing sleep {pace:.1f}s")
+                    await asyncio.sleep(pace)
 
             except Exception as e:
-                log.error(f"Seed generation error (batch {i}): {e}")
-                await asyncio.sleep(5)
+                if "budget exhausted" in str(e):
+                    log.info(f"[{engine}] Daily budget exhausted, stopping generation.")
+                    break
+                log.error(f"[{engine}] Seed generation error (batch {i}): {e}")
+                await asyncio.sleep(10)
 
+        log.info(f"[{engine}] Stream generation complete: {total_seeds} seeds added to corpus")
+
+    async def generate_batch(self, engine: str) -> List[dict]:
+        """後方互換用ラッパー（commit_watcher / generate_cve_seeds等から呼ばれる場合）"""
+        alloc  = self.config['ai']['allocation']
+        budget = alloc['seed_generation']
+        system = V8_SYSTEM_PROMPT if engine == 'v8' else JSC_SYSTEM_PROMPT
+        seeds  = []
+        for i in range(0, budget, self.batch):
+            try:
+                prompt   = self._build_batch_prompt(engine, batch_num=i)
+                response = await self.gemini.generate(prompt, system)
+                for gen_func in self._extract_generators(response):
+                    seeds.extend(self._run_generator(gen_func, engine, count=self.per_req))
+                await asyncio.sleep(max(0.5, GeminiClient.MIN_INTERVAL * self.batch))
+            except Exception as e:
+                if "budget exhausted" in str(e):
+                    break
+                log.error(f"generate_batch error (batch {i}): {e}")
+                await asyncio.sleep(10)
         return seeds
 
     async def generate_for_commit(self, commit: dict) -> List[dict]:
