@@ -112,7 +112,7 @@ class GeminiClient:
             }
         }
 
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        timeout = aiohttp.ClientTimeout(total=120, connect=10)
         for attempt in range(3):
             try:
                 async def _call():
@@ -125,7 +125,7 @@ class GeminiClient:
                                 raise Exception(f"Gemini API error {resp.status}: {text}")
                             return 200, await resp.json()
 
-                status, data = await asyncio.wait_for(_call(), timeout=35)
+                status, data = await asyncio.wait_for(_call(), timeout=130)
 
                 if status in (429, 503):
                     wait = 10 * (attempt + 1)
