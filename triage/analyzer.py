@@ -549,7 +549,7 @@ returncode: {crash.get('returncode', -1)}
 """}]},
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": 4096,
                 "temperature": 0.1,  # 判定は低温度で安定させる
             }
         }
@@ -561,17 +561,38 @@ returncode: {crash.get('returncode', -1)}
                 ) as resp:
                     data = await resp.json()
 
+            # 429・エラーレスポンスのハンドリング
+            if 'error' in data:
+                log.warning(f"Gemini triage API error: {data['error'].get('message', data['error'])}")
+                return self._fallback_triage(crash)
+            if not data.get('candidates'):
+                log.warning(f"Gemini triage: no candidates in response (promptFeedback: {data.get('promptFeedback')})")
+                return self._fallback_triage(crash)
+
             text = data['candidates'][0]['content']['parts'][0]['text']
 
             # JSONを抽出
             text = re.sub(r'```json\n?', '', text)
             text = re.sub(r'```\n?', '', text)
-            result = json.loads(text.strip())
+            text = text.strip()
+
+            # JSONが途中で切れている場合に末尾を補完して再試行
+            try:
+                result = json.loads(text)
+            except json.JSONDecodeError:
+                # 閉じブレースが足りない場合の応急処置
+                fixed = text.rstrip(',')
+                open_braces = fixed.count('{') - fixed.count('}')
+                fixed += '}' * max(0, open_braces)
+                try:
+                    result = json.loads(fixed)
+                    log.warning("Gemini triage JSON was truncated, recovered with brace fix")
+                except json.JSONDecodeError as e:
+                    log.error(f"Gemini JSON parse error: {e}\nResponse: {text[:500]}")
+                    return self._fallback_triage(crash)
+
             return result
 
-        except json.JSONDecodeError as e:
-            log.error(f"Gemini JSON parse error: {e}\nResponse: {text[:500]}")
-            return self._fallback_triage(crash)
         except Exception as e:
             log.error(f"Gemini triage error: {e}")
             return self._fallback_triage(crash)
