@@ -96,9 +96,9 @@ class GeminiClient:
     """
 
     # 無料枠: gemini-2.5-flash は 10 RPM / アカウント
-    RPM_LIMIT = 10
+    RPM_LIMIT = 15
     # リクエスト間の最小間隔 (秒) = 60 / RPM + 余裕1秒
-    MIN_INTERVAL = 60.0 / RPM_LIMIT + 1.0  # ~7s
+    MIN_INTERVAL = 60.0 / RPM_LIMIT + 0.5  # ~4.5s
 
     # 使用量永続化ファイル（再起動後も累積を維持）
     USAGE_FILE = Path('/opt/v8fuzz/logs/gemini_daily_usage.json')
