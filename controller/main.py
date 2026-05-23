@@ -261,6 +261,10 @@ class V8FuzzController:
                 stats = self.reporter._get_daily_stats()
                 uptime_sec = int(_time.time() - start_time)
 
+                # runnerから実際の実行数を取得
+                v8_execs = getattr(self.workers_v8, 'total_execs', 0)
+                exec_rate = v8_execs / max(uptime_sec, 1)
+
                 await self.reporter._push_to_kv('/report/stats', {
                     'corpus_size':    corpus_size,
                     'uptime':         uptime_sec,
@@ -268,10 +272,10 @@ class V8FuzzController:
                     'total_crashes':  stats['v8_crashes'],
                     'unique_crashes': stats['vrp_candidates'],
                     'vrp_candidates': stats['vrp_candidates'],
-                    'v8_execs':       stats.get('v8_execs', 0),
-                    'total_execs':    stats.get('v8_execs', 0),
-                    'exec_rate':      0,
-                    'active_workers': 4,
+                    'v8_execs':       v8_execs,
+                    'total_execs':    v8_execs,
+                    'exec_rate':      round(exec_rate, 1),
+                    'active_workers': self.workers_v8.eng_cfg.get('workers', 4),
                     'updated_at':     _time.time(),
                 })
                 log.debug(f"Stats pushed: corpus={corpus_size} uptime={uptime_sec}s")

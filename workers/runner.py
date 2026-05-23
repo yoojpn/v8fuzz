@@ -165,6 +165,9 @@ class WorkerPool:
         # クラッシュdedup
         self._seen_crashes = set()
 
+        # 実行数カウンター
+        self.total_execs = 0
+
         log.info(
             f"WorkerPool[{engine}] initialized: "
             f"{self.eng_cfg['workers']} workers"
@@ -215,6 +218,7 @@ class WorkerPool:
                 )
 
         log.debug(f"[{self.engine}] Dispatched {len(tasks)} tasks to executor")
+        self.total_execs += len(tasks)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         crashes = []
