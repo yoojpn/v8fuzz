@@ -193,6 +193,8 @@ class V8FuzzController:
                     continue
 
                 result = await self.analyzer.analyze(crash)
+                # Gemini RPM20制限: 3秒/req のペースに抑える
+                await asyncio.sleep(3)
 
                 if result['vrp_eligible']:
                     log.info(
