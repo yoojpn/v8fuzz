@@ -36,7 +36,7 @@ fi
 
 echo "=== 4. Corpus reset ==="
 if [ -d "$CORPUS_DIR" ]; then
-  rm -rf "$CORPUS_DIR"/*
+  find "$CORPUS_DIR" -mindepth 1 -not -name "*.py" -delete
   echo " Cleared: $CORPUS_DIR"
 else
   echo " Not found (skip): $CORPUS_DIR"
