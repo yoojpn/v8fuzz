@@ -41,8 +41,10 @@ class V8FuzzController:
         self.running = False
 
         # コンポーネント初期化
+        self.jsc_enabled = config['engines']['jsc'].get('enabled', False)
+
         self.corpus_v8  = CorpusManager(config, engine='v8')
-        self.corpus_jsc = CorpusManager(config, engine='jsc')
+        self.corpus_jsc = CorpusManager(config, engine='jsc') if self.jsc_enabled else None
 
         self.generator  = SeedGenerator(config)
         self.scheduler  = Scheduler(config)
@@ -50,7 +52,7 @@ class V8FuzzController:
         self.workers_v8  = WorkerPool(config, engine='v8',
                                       corpus=self.corpus_v8)
         self.workers_jsc = WorkerPool(config, engine='jsc',
-                                      corpus=self.corpus_jsc)
+                                      corpus=self.corpus_jsc) if self.jsc_enabled else None
 
         self.analyzer   = CrashAnalyzer(config)
         self.reporter   = VRPReporter(config)
@@ -67,11 +69,12 @@ class V8FuzzController:
         tasks = [
             asyncio.create_task(self._seed_generation_loop()),
             asyncio.create_task(self._v8_fuzz_loop()),
-            asyncio.create_task(self._jsc_fuzz_loop()),
             asyncio.create_task(self._triage_loop()),
             asyncio.create_task(self._commit_watch_loop()),
             asyncio.create_task(self._daily_summary_loop()),
         ]
+        if self.jsc_enabled:
+            tasks.append(asyncio.create_task(self._jsc_fuzz_loop()))
 
         log.info("All workers started. Running...")
 
@@ -121,10 +124,10 @@ class V8FuzzController:
             try:
                 log.info("Starting seed generation cycle (2h window)...")
                 # v8とjscを並列で生成（互いに待たない）
-                await asyncio.gather(
-                    self.generator.generate_stream('v8',  self.corpus_v8),
-                    self.generator.generate_stream('jsc', self.corpus_jsc),
-                )
+                streams = [self.generator.generate_stream('v8', self.corpus_v8)]
+                if self.jsc_enabled:
+                    streams.append(self.generator.generate_stream('jsc', self.corpus_jsc))
+                await asyncio.gather(*streams)
                 log.info("Seed generation cycle complete. Next cycle in 22h.")
                 # 2h生成 + 22h待機 = 24hサイクル
                 await asyncio.sleep(22 * 3600)
