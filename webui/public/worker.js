@@ -328,17 +328,17 @@ window.selectCrash = function(id) {
 // ── download helpers ────────────────────────────────────
 async function downloadFile(crashId, type) {
   try {
-    const res = await apiFetch(`/report/crash/${crashId}`);
+    const res = await apiFetch('/report/crash/' + crashId);
     if (!res) return;
     const crash = await res.json();
     let content, filename, mime;
     if (type === 'js') {
       content = crash.poc_js || crash.js_code || '// no JS available';
-      filename = `${crashId}.js`;
+      filename = crashId + '.js';
       mime = 'text/javascript';
     } else {
       content = crash.stderr || crash.asan_log || '// no log available';
-      filename = `${crashId}.log`;
+      filename = crashId + '.log';
       mime = 'text/plain';
     }
     const blob = new Blob([content], {type: mime});
@@ -351,14 +351,14 @@ async function downloadFile(crashId, type) {
 
 async function generateVrpReport(crashId) {
   try {
-    const res = await apiFetch(`/report/crash/${crashId}/vrp`);
+    const res = await apiFetch('/report/crash/' + crashId + '/vrp');
     if (!res) return;
     const data = await res.json();
     const content = data.report || JSON.stringify(data, null, 2);
     const blob = new Blob([content], {type: 'text/markdown'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `${crashId}_vrp_report.md`; a.click();
+    a.href = url; a.download = crashId + '_vrp_report.md'; a.click();
     URL.revokeObjectURL(url);
   } catch(e) { alert('VRP report generation failed: ' + e.message); }
 }
