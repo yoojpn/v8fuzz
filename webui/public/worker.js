@@ -395,28 +395,23 @@ function timeAgo(ts) {
 }
 
 function generateMdReport(c) {
-  return `# VRP Report: ${c.crash_type||'Unknown'} in ${c.component||'V8'}
-
-## Summary
-- **Crash ID**: ${c.id}
-- **Type**: ${c.crash_type||'Unknown'}
-- **CVSS**: ${c.cvss||0}
-- **Exploitability**: ${c.exploitability||'unknown'}
-- **Component**: ${c.component||c.file||'V8 JIT'}
-
-## Steps to Reproduce
-\`\`\`javascript
-${c.poc_js||c.js_code||'// PoC not available'}
-\`\`\`
-
-## ASAN Output
-\`\`\`
-${c.stderr||c.asan_log||'// Log not available'}
-\`\`\`
-
-## Impact
-${c.attack_scenario||'Under investigation'}
-`;
+  return '# VRP Report: ' + (c.crash_type||'Unknown') + ' in ' + (c.component||'V8') + '\n\n'
+    + '## Summary\n'
+    + '- **Crash ID**: ' + c.id + '\n'
+    + '- **Type**: ' + (c.crash_type||'Unknown') + '\n'
+    + '- **CVSS**: ' + (c.cvss||0) + '\n'
+    + '- **Exploitability**: ' + (c.exploitability||'unknown') + '\n'
+    + '- **Component**: ' + (c.component||c.file||'V8 JIT') + '\n\n'
+    + '## Steps to Reproduce\n'
+    + '```javascript\n'
+    + (c.poc_js||c.js_code||'// PoC not available') + '\n'
+    + '```\n\n'
+    + '## ASAN Output\n'
+    + '```\n'
+    + (c.stderr||c.asan_log||'// Log not available') + '\n'
+    + '```\n\n'
+    + '## Impact\n'
+    + (c.attack_scenario||'Under investigation') + '\n';
 }
 
 // ── fetch ────────────────────────────────────────────────
