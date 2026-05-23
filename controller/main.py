@@ -31,6 +31,7 @@ log = logging.getLogger('controller')
 
 def load_config() -> dict:
     path = Path(__file__).parent.parent / 'config' / 'config.yaml'
+    print(f"[load_config] Loading config from: {path}", flush=True)
     with open(path) as f:
         return yaml.safe_load(f)
 
