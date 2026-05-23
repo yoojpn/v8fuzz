@@ -142,7 +142,7 @@ class V8FuzzController:
             try:
                 # T-Schedulerがseedを選択
                 seeds = await self.scheduler.select(
-                    self.corpus_v8, count=1000
+                    self.corpus_v8, count=50
                 )
                 if not seeds:
                     await asyncio.sleep(5)
