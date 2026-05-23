@@ -73,6 +73,7 @@ class V8FuzzController:
             asyncio.create_task(self._triage_loop()),
             asyncio.create_task(self._commit_watch_loop()),
             asyncio.create_task(self._daily_summary_loop()),
+            asyncio.create_task(self._stats_push_loop()),
         ]
         if self.jsc_enabled:
             tasks.append(asyncio.create_task(self._jsc_fuzz_loop()))
@@ -245,6 +246,30 @@ class V8FuzzController:
             except Exception as e:
                 log.error(f"Daily summary error: {e}")
                 await asyncio.sleep(3600)
+
+
+    async def _stats_push_loop(self):
+        """30秒ごとにstats/corpus/uptimeをCloudflare KVへpush"""
+        import time as _time
+        start_time = _time.time()
+        while self.running:
+            try:
+                corpus_size = len(await self.corpus_v8.get_all())
+                stats = self.analyzer._get_daily_stats()
+                uptime_sec = int(_time.time() - start_time)
+
+                await self.reporter._push_to_kv('/api/stats', {
+                    'corpus':         corpus_size,
+                    'uptime':         uptime_sec,
+                    'v8_crashes':     stats['v8_crashes'],
+                    'vrp_candidates': stats['vrp_candidates'],
+                    'v8_execs':       stats.get('v8_execs', 0),
+                    'updated_at':     _time.time(),
+                })
+                log.debug(f"Stats pushed: corpus={corpus_size} uptime={uptime_sec}s")
+            except Exception as e:
+                log.warning(f"Stats push error: {e}")
+            await asyncio.sleep(30)
 
 
 def main():
