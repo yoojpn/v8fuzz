@@ -201,7 +201,7 @@ class V8FuzzController:
                     await self.reporter.handle(crash, result)
 
             except Exception as e:
-                log.error(f"Triage error: {e}")
+                log.exception(f"Triage error: {e}")
                 await asyncio.sleep(5)
 
     async def _commit_watch_loop(self):
