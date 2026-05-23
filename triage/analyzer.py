@@ -321,7 +321,22 @@ class CrashAnalyzer:
         self.ai_cfg        = config['ai']
         self._queue: asyncio.Queue = asyncio.Queue()
         self._vrp_rules    = ""  # 起動後にfetch
+        self._seen_sigs: set = set()  # メモリ上dedup用
         self._init_db()
+        self._load_seen_sigs()
+
+    def _load_seen_sigs(self):
+        """起動時にDB上の既存signatureをメモリに読み込む（再起動後のdedup）"""
+        try:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT signature FROM crashes WHERE signature != '' AND signature IS NOT NULL"
+                ).fetchall()
+                self._seen_sigs = {r[0] for r in rows}
+                log.info(f"Loaded {len(self._seen_sigs)} known signatures from DB")
+        except Exception as e:
+            log.warning(f"Failed to load signatures: {e}")
+            self._seen_sigs = set()
 
     async def init_vrp_rules(self):
         """起動時にVRPルールページを取得"""
@@ -375,11 +390,26 @@ class CrashAnalyzer:
             """)
 
     async def queue(self, crash: dict, engine: str):
-        """クラッシュをtriageキューに追加"""
+        """クラッシュをtriageキューに追加。同一signatureは永続dedup"""
         crash['engine'] = engine
+        sig = crash.get('signature', '')
 
-        # DB保存
+        # メモリ上dedup（高速）
+        if sig and sig in self._seen_sigs:
+            log.debug(f"Dedup (memory): {crash['id']} sig={sig[:8]}")
+            return
+
+        # DB永続dedup（再起動後も有効）
         with sqlite3.connect(self.db_path) as db:
+            if sig:
+                row = db.execute(
+                    "SELECT id FROM crashes WHERE signature=? LIMIT 1", (sig,)
+                ).fetchone()
+                if row:
+                    log.debug(f"Dedup (DB): {crash['id']} dup of {row[0]}")
+                    self._seen_sigs.add(sig)
+                    return
+
             db.execute("""
                 INSERT OR IGNORE INTO crashes
                     (id, engine, seed_id, js_code, stderr,
@@ -395,10 +425,12 @@ class CrashAnalyzer:
                 crash.get('returncode', -1),
                 crash.get('worker_type', 'unknown'),
                 1 if crash.get('differ_bug') else 0,
-                crash.get('signature', ''),
+                sig,
                 crash.get('timestamp', time.time()),
             ))
 
+        if sig:
+            self._seen_sigs.add(sig)
         await self._queue.put(crash)
 
     async def dequeue(self) -> Optional[dict]:
@@ -409,25 +441,136 @@ class CrashAnalyzer:
             return None
 
     async def analyze(self, crash: dict) -> dict:
-        """クラッシュを解析してVRP判定を返す"""
+        """後方互換: 単一クラッシュをanalyze_batchに委譲"""
+        results = await self.analyze_batch([crash])
+        return results[0] if results else {
+            'vrp_eligible': False, 'cvss': 0.0, 'priority': 'ignore'
+        }
 
-        # 1. 事前フィルター
-        filter_result = self._pre_filter(crash)
-        if filter_result['skip']:
+    async def analyze_batch(self, crashes: list) -> list:
+        """クラッシュのリストをsignatureでグループ化し、代表1件ずつGeminiに投げる"""
+        if not crashes:
+            return []
+
+        # --- 事前フィルター ---
+        passed = []
+        for crash in crashes:
+            f = self._pre_filter(crash)
+            if f['skip']:
+                log.info(f"Pre-filter skip: {crash['id']} - {f['reason']}")
+                self._update_db(crash['id'], {
+                    'vrp_eligible': False,
+                    'crash_type': '',
+                    'cvss': 0.0,
+                    'exploitability': '',
+                    'estimated_reward_min': 0,
+                    'estimated_reward_max': 0,
+                    'report_title': '',
+                    'priority': 'ignore',
+                    'attack_scenario': '',
+                    'patch_hint': '',
+                })
+            else:
+                passed.append(crash)
+
+        if not passed:
+            return [{'vrp_eligible': False, 'cvss': 0.0, 'priority': 'ignore'}] * len(crashes)
+
+        # --- signatureでグループ化して代表を選ぶ ---
+        groups: dict[str, list] = {}
+        for crash in passed:
+            sig = crash.get('signature', crash['id'])
+            groups.setdefault(sig, []).append(crash)
+
+        log.info(
+            f"analyze_batch: {len(passed)} crashes → "
+            f"{len(groups)} unique groups (Gemini calls: {len(groups)})"
+        )
+
+        # --- 各グループの代表1件だけGeminiでtriage ---
+        results = []
+        for sig, group in groups.items():
+            # 最初の1件を代表とする
+            rep = group[0]
+            result = await self._gemini_triage(rep)
+
             log.info(
-                f"Pre-filter skip: {crash['id']} - {filter_result['reason']}"
+                f"Triage [{len(group)} crashes, sig={sig[:8]}]: "
+                f"eligible={result.get('vrp_eligible')} | "
+                f"CVSS={result.get('cvss')} | "
+                f"est=${result.get('estimated_reward_min',0)}"
+                f"~${result.get('estimated_reward_max',0)}"
             )
-            return {
-                'vrp_eligible': False,
-                'reason_if_not_eligible': filter_result['reason'],
-                'cvss': 0.0,
-                'priority': 'ignore',
-            }
 
-        # 2. Geminiでtriage
-        result = await self._gemini_triage(crash)
+            # グループ全員に同じ判定を適用
+            for crash in group:
+                self._update_db(crash['id'], result)
 
-        # 3. DB更新
+            results.append((rep, result))
+
+        # --- VRP候補だけreporterに渡すためにフラット化して返す ---
+        return [r for _, r in results]
+
+    async def analyze_batch_throttled(self, crashes: list, interval: float = 3.5) -> list:
+        """analyze_batchをGeminiレート制限に合わせてスロットリングして実行。
+        戻り値: [(代表crash, result), ...] のリスト（VRP eligible/ineligible問わず全グループ）
+        """
+        if not crashes:
+            return []
+
+        # --- 事前フィルター ---
+        passed = []
+        for crash in crashes:
+            f = self._pre_filter(crash)
+            if f['skip']:
+                log.info(f"Pre-filter skip: {crash['id']} - {f['reason']}")
+                self._update_db(crash['id'], {
+                    'vrp_eligible': False, 'crash_type': '', 'cvss': 0.0,
+                    'exploitability': '', 'estimated_reward_min': 0,
+                    'estimated_reward_max': 0, 'report_title': '',
+                    'priority': 'ignore', 'attack_scenario': '', 'patch_hint': '',
+                })
+            else:
+                passed.append(crash)
+
+        if not passed:
+            return []
+
+        # --- signatureでグループ化 ---
+        groups: dict[str, list] = {}
+        for crash in passed:
+            sig = crash.get('signature', crash['id'])
+            groups.setdefault(sig, []).append(crash)
+
+        log.info(
+            f"analyze_batch_throttled: {len(passed)} crashes → "
+            f"{len(groups)} unique groups → {len(groups)} Gemini calls"
+        )
+
+        results = []
+        for i, (sig, group) in enumerate(groups.items()):
+            if i > 0:
+                await asyncio.sleep(interval)  # RPM制御
+
+            rep = group[0]
+            result = await self._gemini_triage(rep)
+
+            log.info(
+                f"Triage group[{i+1}/{len(groups)}] "
+                f"({len(group)} crashes, sig={sig[:8]}): "
+                f"eligible={result.get('vrp_eligible')} "
+                f"CVSS={result.get('cvss')}"
+            )
+
+            for crash in group:
+                self._update_db(crash['id'], result)
+
+            results.append((rep, result))
+
+        return results
+
+
+        """triage結果をDBに書き込む"""
         with sqlite3.connect(self.db_path) as db:
             db.execute("""
                 UPDATE crashes SET
@@ -455,18 +598,8 @@ class CrashAnalyzer:
                 result.get('attack_scenario', ''),
                 result.get('patch_hint', ''),
                 time.time(),
-                crash['id'],
+                crash_id,
             ))
-
-        log.info(
-            f"Triage: {crash['id']} | "
-            f"eligible={result.get('vrp_eligible')} | "
-            f"CVSS={result.get('cvss')} | "
-            f"est=${result.get('estimated_reward_min',0)}"
-            f"~${result.get('estimated_reward_max',0)}"
-        )
-
-        return result
 
     def _pre_filter(self, crash: dict) -> dict:
         """VRP対象外を事前に弾く"""
@@ -489,9 +622,25 @@ class CrashAnalyzer:
                 return {'skip': True, 'reason': 'differ_bug but no stderr evidence'}
             return {'skip': False, 'reason': ''}
 
-        # 明らかに悪意のないクラッシュ
-        if 'FATAL ERROR' not in stderr and crash.get('returncode') == 1:
+        # returncode==1はJS例外のみ → スキップ
+        if crash.get('returncode') == 1:
             return {'skip': True, 'reason': 'JS例外のみ（severity低すぎ）'}
+
+        # 明確なメモリ破壊シグナルチェック
+        MEMORY_SIGNALS = (
+            'AddressSanitizer', 'ASAN', 'UBSAN',
+            'heap-buffer-overflow', 'stack-buffer-overflow',
+            'use-after-free', 'use-after-poison',
+            'heap-use-after-free',
+            'SEGV', 'Segmentation fault',
+            'CHECK(', 'FATAL ERROR',
+            'Fatal JavaScript',
+            '#0 ', '#1 ',          # シンボル付きスタックトレース
+            'v8::internal::',
+        )
+        has_signal = any(s in stderr for s in MEMORY_SIGNALS)
+        if not has_signal and not crash.get('differ_bug'):
+            return {'skip': True, 'reason': f'メモリ破壊シグナルなし (rc={crash.get("returncode")})'}
 
         return {'skip': False, 'reason': ''}
 

@@ -184,38 +184,53 @@ class V8FuzzController:
                 await asyncio.sleep(10)
 
     async def _triage_loop(self):
-        """クラッシュ解析・VRP判定ループ"""
-        # Gemini free tier: RPM=20 → 最低3秒/req
-        # analyze()がAPIを叩く前にスロットルをかける
-        _TRIAGE_INTERVAL = 3.5  # 少し余裕を持たせる
+        """クラッシュ解析・VRP判定ループ
+
+        30秒バッファリングしてキューに溜まったクラッシュをまとめて
+        analyze_batch() に投げる。
+        - 同一signatureはanalyzer側でグループ化して代表1件のみGemini呼び出し
+        - Gemini RPM20制限: グループ数 × 3.5秒 のペース制御はanalyzer内で行う
+        """
+        _BUFFER_SEC = 30  # バッファリング時間
+        _TRIAGE_INTERVAL = 3.5  # Gemini RPM20: 3.5秒/req
+
         while self.running:
             try:
-                crash = await self.analyzer.dequeue()
-                if crash is None:
-                    await asyncio.sleep(1)
+                # 30秒待ってキューに溜まったものを全部回収
+                await asyncio.sleep(_BUFFER_SEC)
+
+                batch = []
+                while True:
+                    crash = await self.analyzer.dequeue()
+                    if crash is None:
+                        break
+                    batch.append(crash)
+
+                if not batch:
                     continue
 
-                queue_depth = self.analyzer._queue.qsize()
-                if queue_depth > 0:
-                    log.debug(f"Triage queue depth: {queue_depth}")
+                log.info(f"Triage batch: {len(batch)} crashes buffered")
 
-                # APIコール前にスロットル（RPM20対策）
-                await asyncio.sleep(_TRIAGE_INTERVAL)
+                # analyze_batch内でsignatureグループ化→代表1件ずつGemini
+                # RPM制御のためグループ間に3.5秒スリープを挟む
+                # analyze_batch が返すのは各グループの結果リスト
+                results = await self.analyzer.analyze_batch_throttled(
+                    batch, interval=_TRIAGE_INTERVAL
+                )
 
-                result = await self.analyzer.analyze(crash)
-
-                if result['vrp_eligible']:
-                    log.info(
-                        f"VRP candidate: {crash['id']} "
-                        f"CVSS={result['cvss']} "
-                        f"est=${result.get('estimated_reward_min',0)}"
-                        f"~${result.get('estimated_reward_max',0)}"
-                    )
-                    await self.reporter.handle(crash, result)
+                for rep_crash, result in results:
+                    if result.get('vrp_eligible'):
+                        log.info(
+                            f"VRP candidate: {rep_crash['id']} "
+                            f"CVSS={result['cvss']} "
+                            f"est=${result.get('estimated_reward_min',0)}"
+                            f"~${result.get('estimated_reward_max',0)}"
+                        )
+                        await self.reporter.handle(rep_crash, result)
 
             except Exception as e:
                 log.exception(f"Triage error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
 
     async def _commit_watch_loop(self):
         """新コミット監視ループ"""
