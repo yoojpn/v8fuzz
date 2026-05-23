@@ -255,7 +255,7 @@ class V8FuzzController:
         while self.running:
             try:
                 corpus_size = len(await self.corpus_v8.get_all())
-                stats = self.analyzer._get_daily_stats()
+                stats = self.reporter._get_daily_stats()
                 uptime_sec = int(_time.time() - start_time)
 
                 await self.reporter._push_to_kv('/api/stats', {
