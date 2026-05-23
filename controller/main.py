@@ -278,7 +278,7 @@ class V8FuzzController:
                     'uptime':         uptime_sec,
                     'start_time':     start_time,
                     'total_crashes':  stats['v8_crashes'],
-                    'unique_crashes': stats['vrp_candidates'],
+                    'unique_crashes': stats.get('unique_crashes', 0),
                     'vrp_candidates': stats['vrp_candidates'],
                     'v8_execs':       v8_execs,
                     'total_execs':    v8_execs,

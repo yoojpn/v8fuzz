@@ -458,8 +458,15 @@ This vulnerability could allow an attacker to:
                 WHERE vrp_eligible=1 AND timestamp > ?
             """, (cutoff,)).fetchone()[0]
 
+            unique = db.execute("""
+                SELECT COUNT(DISTINCT substr(stderr, 1, 200)) FROM crashes
+                WHERE engine='v8' AND timestamp > ?
+                AND stderr IS NOT NULL AND stderr != ''
+            """, (cutoff,)).fetchone()[0]
+
         return {
             'v8_crashes':     v8,
+            'unique_crashes': unique,
             'jsc_crashes':    jsc,
             'v8_execs':       0,   # runner.pyから取得予定
             'jsc_execs':      0,
