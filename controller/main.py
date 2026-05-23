@@ -10,9 +10,9 @@ from pathlib import Path
 
 import yaml
 
+sys.path.append(str(Path(__file__).parent.parent))
 from scheduler import Scheduler
 from commit_watcher import CommitWatcher
-sys.path.append(str(Path(__file__).parent.parent))
 from workers.runner import WorkerPool
 from corpus.manager import CorpusManager
 from corpus.generator import SeedGenerator
