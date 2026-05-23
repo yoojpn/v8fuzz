@@ -459,9 +459,12 @@ This vulnerability could allow an attacker to:
             """, (cutoff,)).fetchone()[0]
 
             unique = db.execute("""
-                SELECT COUNT(DISTINCT substr(stderr, 1, 200)) FROM crashes
+                SELECT COUNT(DISTINCT CASE
+                    WHEN signature != '' AND signature IS NOT NULL
+                    THEN signature
+                    ELSE id
+                END) FROM crashes
                 WHERE engine='v8' AND timestamp > ?
-                AND stderr IS NOT NULL AND stderr != ''
             """, (cutoff,)).fetchone()[0]
 
         return {
