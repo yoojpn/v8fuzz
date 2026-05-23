@@ -66,6 +66,9 @@ class V8FuzzController:
         # tmpfs マウント確認
         self._check_tmpfs()
 
+        # VRPルールをfetch
+        await self.analyzer.init_vrp_rules()
+
         # 並列タスク起動
         tasks = [
             asyncio.create_task(self._seed_generation_loop()),

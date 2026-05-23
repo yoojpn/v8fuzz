@@ -13,83 +13,97 @@ import time
 from pathlib import Path
 from typing import Optional
 import aiohttp
+from html.parser import HTMLParser
 
 log = logging.getLogger('analyzer')
 
 
-VRP_SYSTEM_PROMPT = """
-あなたはChrome VRP（脆弱性報奨金プログラム）とApple Security Bountyの
-判定専門家です。以下の公式ルールに基づいてクラッシュを正確に評価してください。
+VRP_SYSTEM_PROMPT = None  # 起動時にfetch
 
-=== Chrome VRP 公式ルール ===
 
-【対象】
-- Stable / Beta / Dev チャンネルのバグ
-- コミットから8日以上経過したバグ（7日ルール + バッファ）
-- --experimental フラグが不要なバグ
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._texts = []
+        self._skip = False
 
-【対象外】
-- --experimental-* フラグが必要なバグ
-- コマンドライン引数でのみ発生するバグ（一部例外あり）
-- 既にパッチ済みのバグ
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style', 'nav', 'footer', 'header'):
+            self._skip = True
 
-【報奨金レンジ（2024年8月改定）】
-- RCE（非サンドボックス）: 最大$250,000
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style', 'nav', 'footer', 'header'):
+            self._skip = False
+
+    def handle_data(self, data):
+        if not self._skip:
+            text = data.strip()
+            if text:
+                self._texts.append(text)
+
+    def get_text(self):
+        return '
+'.join(self._texts)
+
+
+async def fetch_vrp_rules(url: str) -> str:
+    """bughunters.google.comからVRPルールを取得してテキスト化"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                html = await resp.text()
+        parser = _HTMLTextExtractor()
+        parser.feed(html)
+        text = parser.get_text()
+        # 関連部分のみ抽出（長すぎるとトークン消費大）
+        lines = [l for l in text.split('
+') if l.strip()]
+        # 最大8000文字に制限
+        return '
+'.join(lines)[:8000]
+    except Exception as e:
+        log.warning(f"VRPルール取得失敗: {e} - ハードコードフォールバック使用")
+        return ""
+
+
+FALLBACK_RULES = """
+【Chrome VRP 対象】
+- Stable/Beta/Devチャンネルで再現するバグ
+- コミットから8日以上経過
+- 特殊フラグ不要（--experimental-*等は対象外）
+【報奨金目安】
+- RCE: $25,000〜$250,000
 - サンドボックス脱出: $50,000〜$100,000
-- OOB Write（exploitable）: $20,000〜$50,000
-- Type Confusion（JIT）: $15,000〜$30,000
-- OOB Read: $7,500〜$15,000
+- OOB Write: $20,000〜$50,000
+- Type Confusion(JIT): $15,000〜$30,000
 - UAF: $10,000〜$30,000
-- Low severity / DoS: $500〜$3,000
-
-【ボーナス】
-- Bisect Bonus: 導入コミット特定で追加報奨金
-- Patch Bonus: 修正パッチ提出で$500〜$2,000追加
-
-=== Apple Security Bounty ルール ===
-
-【報奨金レンジ（2025年改定）】
-- WebKit RCE（サンドボックス脱出）: 最大$300,000
-- Type Confusion: $50,000〜$150,000
-- OOB Read/Write: $25,000〜$100,000
-- Memory Corruption: $50,000〜$200,000
-
-【注意】
-- AIで生成した長い説明文は避ける（Appleが明示的に嫌う）
-- 報告書はコンパクトで具体的に
-
-=== 評価タスク ===
-
-以下のクラッシュ情報を評価し、必ずJSONのみを出力してください。
-前置きや説明は不要です。
-
-{
-  "vrp_eligible": true/false,
-  "reason_if_not_eligible": "...",
-  "crash_type": "OOB Write|OOB Read|UAF|Type Confusion|Stack Overflow|Integer Overflow|Other",
-  "cvss": 0.0,
-  "exploitability": "high|medium|low|none",
-  "estimated_reward_min": 0,
-  "estimated_reward_max": 0,
-  "target_program": "Google Chrome VRP|Apple Security Bounty",
-  "affected_component": "Maglev JIT|TurboFan|GC|Wasm|Proxy|Other",
-  "report_title": "VRPタイトル案（英語・60文字以内）",
-  "priority": "immediate|daily_summary|ignore",
-  "bonus_opportunities": [],
-  "attack_scenario": "どのように悪用できるか（1〜2文）",
-  "patch_hint": "修正の方向性（1文）"
-}
+- OOB Read: $7,500〜$15,000
+- DoS/Low: $500〜$3,000
 """
 
 
 class CrashAnalyzer:
     def __init__(self, config: dict):
-        self.config   = config
-        self.db_path  = config['infra']['db_path']
-        self.triage   = config['triage']
-        self.ai_cfg   = config['ai']
+        self.config        = config
+        self.db_path       = config['infra']['db_path']
+        self.triage        = config['triage']
+        self.ai_cfg        = config['ai']
         self._queue: asyncio.Queue = asyncio.Queue()
+        self._vrp_rules    = ""  # 起動後にfetch
         self._init_db()
+
+    async def init_vrp_rules(self):
+        """起動時にVRPルールページを取得"""
+        url = self.triage.get('vrp_rules_url', '')
+        if url:
+            self._vrp_rules = await fetch_vrp_rules(url)
+            if self._vrp_rules:
+                log.info(f"VRPルール取得完了: {len(self._vrp_rules)}文字")
+            else:
+                self._vrp_rules = FALLBACK_RULES
+                log.warning("VRPルール取得失敗: フォールバック使用")
+        else:
+            self._vrp_rules = FALLBACK_RULES
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as db:
@@ -277,7 +291,31 @@ returncode: {crash.get('returncode', -1)}
             f"gemini-2.5-flash:generateContent?key={api_key}"
         )
         payload = {
-            "system_instruction": {"parts": [{"text": VRP_SYSTEM_PROMPT}]},
+            "system_instruction": {"parts": [{"text": f"""あなたはChrome VRP判定専門家です。以下の公式ルールに基づいてクラッシュを評価してください。
+
+=== Chrome VRP 公式ルール ===
+{self._vrp_rules or FALLBACK_RULES}
+
+=== 評価タスク ===
+以下のクラッシュ情報を評価し、必ずJSONのみを出力してください。前置きや説明は不要です。
+
+{{
+  "vrp_eligible": true/false,
+  "reason_if_not_eligible": "...",
+  "crash_type": "OOB Write|OOB Read|UAF|Type Confusion|Stack Overflow|Integer Overflow|Other",
+  "cvss": 0.0,
+  "exploitability": "critical|high|medium|low|none",
+  "estimated_reward_min": 0,
+  "estimated_reward_max": 0,
+  "target_program": "Google Chrome VRP",
+  "affected_component": "V8 JIT|V8 GC|V8 Parser|...",
+  "report_title": "...",
+  "priority": "critical|high|medium|low|ignore",
+  "bonus_opportunities": [],
+  "attack_scenario": "どのように悪用できるか（1〜2文）",
+  "patch_hint": "修正の方向性（1文）"
+}}
+"""}]},
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "maxOutputTokens": 2048,
