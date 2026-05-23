@@ -317,13 +317,51 @@ window.selectCrash = function(id) {
     </dl>
     \${(c.poc_js||c.js_code)?\`<div style="font-size:11px;color:#8b949e;margin:16px 0 4px">minimized PoC</div><pre class="poc-pre">\${(c.poc_js||c.js_code).replace(/</g,'&lt;')}</pre>\`:''}
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      <button class="btn danger">generate VRP report</button>
+      <button class="btn danger" onclick="generateVrpReport('${c.id}')">generate VRP report</button>
       <div style="display:flex;gap:8px">
-        <button class="btn" style="flex:1">download .js</button>
-        <button class="btn" style="flex:1">download log</button>
+        <button class="btn" style="flex:1" onclick="downloadFile('${c.id}','js')">download .js</button>
+        <button class="btn" style="flex:1" onclick="downloadFile('${c.id}','log')">download log</button>
       </div>
     </div>\`;
 };
+
+// ── download helpers ────────────────────────────────────
+async function downloadFile(crashId, type) {
+  try {
+    const res = await apiFetch(`/report/crash/${crashId}`);
+    if (!res) return;
+    const crash = await res.json();
+    let content, filename, mime;
+    if (type === 'js') {
+      content = crash.poc_js || crash.js_code || '// no JS available';
+      filename = `${crashId}.js`;
+      mime = 'text/javascript';
+    } else {
+      content = crash.stderr || crash.asan_log || '// no log available';
+      filename = `${crashId}.log`;
+      mime = 'text/plain';
+    }
+    const blob = new Blob([content], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('Download failed: ' + e.message); }
+}
+
+async function generateVrpReport(crashId) {
+  try {
+    const res = await apiFetch(`/report/crash/${crashId}/vrp`);
+    if (!res) return;
+    const data = await res.json();
+    const content = data.report || JSON.stringify(data, null, 2);
+    const blob = new Blob([content], {type: 'text/markdown'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${crashId}_vrp_report.md`; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('VRP report generation failed: ' + e.message); }
+}
 
 // ── render logs ─────────────────────────────────────────
 function renderLogs() {
@@ -354,6 +392,31 @@ function timeAgo(ts) {
   if (diff<3600) return Math.floor(diff/60)+'分前';
   if (diff<86400) return Math.floor(diff/3600)+'時間前';
   return Math.floor(diff/86400)+'日前';
+}
+
+function generateMdReport(c) {
+  return `# VRP Report: ${c.crash_type||'Unknown'} in ${c.component||'V8'}
+
+## Summary
+- **Crash ID**: ${c.id}
+- **Type**: ${c.crash_type||'Unknown'}
+- **CVSS**: ${c.cvss||0}
+- **Exploitability**: ${c.exploitability||'unknown'}
+- **Component**: ${c.component||c.file||'V8 JIT'}
+
+## Steps to Reproduce
+\`\`\`javascript
+${c.poc_js||c.js_code||'// PoC not available'}
+\`\`\`
+
+## ASAN Output
+\`\`\`
+${c.stderr||c.asan_log||'// Log not available'}
+\`\`\`
+
+## Impact
+${c.attack_scenario||'Under investigation'}
+`;
 }
 
 // ── fetch ────────────────────────────────────────────────
@@ -422,6 +485,19 @@ export default {
 
       if (!authorized) return json({ error: 'Unauthorized' }, 401);
       if (path === '/report/crash' && request.method === 'POST') return await receiveCrash(request, env);
+      if (path.startsWith('/report/crash/') && request.method === 'GET') {
+        const crashId = path.split('/report/crash/')[1].replace('/vrp','');
+        const isVrp = path.endsWith('/vrp');
+        const val = await env.KV.get('crash:' + crashId);
+        if (!val) return new Response('Not found', {status:404});
+        const crash = JSON.parse(val);
+        if (isVrp) {
+          // VRPレポートをMarkdown形式で返す
+          const report = crash.vrp_report || generateMdReport(crash);
+          return new Response(JSON.stringify({report}), {headers:corsHeaders('application/json')});
+        }
+        return new Response(val, {headers:corsHeaders('application/json')});
+      }
       if (path === '/report/stats' && request.method === 'POST') return await receiveStats(request, env);
       if (path === '/report/log'   && request.method === 'POST') return await receiveLog(request, env);
 
