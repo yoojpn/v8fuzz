@@ -53,87 +53,263 @@ async def fetch_vrp_rules(url: str) -> str:
 
 
 FALLBACK_RULES = """
-=== Chrome Vulnerability Reward Program Rules (2026-04 updated) ===
+Chrome Vulnerability Reward Program Rules
+Scope of program 
+Any High or Critical severity bug in Chrome Browser may be considered. It’s that simple!*
 
-[Scope]
-- Any High or Critical severity bug in Chrome Browser (Stable, Beta, Dev channels)
-- Reports for bugs introduced within the last 7 days are NOT eligible
-- Experimental features, debugging features, and unsafe flags are NOT in scope
-- MiraclePtr-protected bugs are NOT considered security issues (not in scope)
-- Bugs in unlaunched features (behind disabled feature flags) are generally eligible
+* Well, it's almost that simple. Important key points:
 
-[Eligibility requirements]
-- Bug must be reachable on latest OS and 64-bit hardware
-- Must manifest in an active release channel of Chrome on a supported platform
-- Must be the first actionable report (duplicates not rewarded)
-- Speculative reports without PoC will be closed
+We are interested in bugs that make it to our Stable, Beta, and Dev channels.
+Reports for security bugs introduced in newly landed code on trunk / head within the last seven days are not eligible for VRP rewards.
+We'd also love to learn about bugs in third-party components that we ship or use (e.g. PDFium, Skia).
+Bugs may be eligible even if they are part of the base operating system or GPU driver bugs that are reachable from a renderer process and triggerable through Chrome Browser, such as user mode GPU driver bugs in Mesa or Mali drivers.
+For a full reward, the bug must be reachable on the latest OS and 64-bit hardware and manifest in an active release channel of Chrome, on a supported platform.
+If these bugs are in a project or product maintained outside of Google, they should be reported – by you – upstream to that project or vendor in parallel to reporting them to us. This ensures you have visibility to the status of the fix, receive credit for the discovery, and we are not brokering bugs on your behalf.
+Bugs not reported upstream may not be eligible for a full reward.
+Bugs in WebKit that impact Chrome on iOS are not eligible for a VRP reward if they are not reported upstream to Apple.
+Bugs in unlaunched features – in code behind a feature flag not enabled by default – are generally eligible for the full potential VRP reward. See below for excluded features.
+MiraclePtr-protected bugs are no longer considered security issues and are not in scope for VRP rewards.
+We are very interested in research of bypasses of MiraclePtr protection, resulting in exploitation of and RCE from a vulnerability that is protected by MiraclePtr. Reports of a MiraclePtr bypass are eligible for a potential $100,115 reward. A demonstration of exploitation of a BRP-protected use-after-free (UAF) through a report of a novel UAF with PoC or exploit is eligible for additional rewards. The MiraclePtr bypass reward is detailed in the Additional Chrome Rewards section below.
+A vulnerability is protected by MiraclePtr only when the test case triggering it results in a status of "MiraclePtr Status: PROTECTED" when reproduced in an ASAN build. Issues with test cases that result in a status of "MiraclePtr Status: NEEDS MANUAL ANALYSIS" in an ASAN build will be reviewed and handled as potential security issues. If, during the course of triage and investigation, the bug is deemed to be protected, it will be downgraded to a bug and handled as a functional issue and would not be eligible for a VRP reward.
+Qualifying vulnerabilities 
+The Chrome VRP covers all reproducible security issues with critical and high impact, plus bugs that fall into special categories outlined below.
 
-[Report quality - REQUIRED for full reward]
-- Must be brief and to the point (over-long reports with spurious impact claims = below baseline)
-- Attach PoCs and traces as individual files
-- Be reliably reproducible in Chrome, d8, or a supported test binary
-- Provide clear, concise, ordered steps to reproduce
-- Specify Chrome versions affected
+Keep the following rules in mind:
 
-[Memory safety reports must include]
-- Fully symbolized ASAN stack trace (all frames)
-- Minimized PoC or patch
-- Must NOT provide only a crash dump or unsymbolized stack trace
+Only the first actionable report of a given issue that we were previously unaware of is eligible. In the event of a duplicate submission, the earliest filed actionable bug report in the bug tracker is generally considered the first report. Please see the below subsection Update to policy regarding unactionable reports and duplicates. for more information.
+Bugs disclosed publicly or to a third-party for purposes other than fixing the bug will typically not qualify for a reward. We encourage coordinated disclosure, and believe disclosure is a two-way street; it's our duty to fix serious bugs within a reasonable timeframe.
+We take into account if the report caused us to make a security-beneficial change, i.e. we would likely not reward if we would have fixed the issue without the report.
+Speculative reports that describe a vulnerability but do not demonstrate that it manifests in Chrome will be closed and will not be treated as the first report of an issue.
+Chrome runs internal tooling to find bugs. Reports may be duplicated against internally sourced issues up to seven days after submission. Internal tooling will not have visibility of external reports during this window.
+Experimental features, debugging features, and unsafe flags are not in scope.
+See the VRP FAQ for some pointers.
 
-[Memory Safety Reward Amounts - base $500 with multipliers]
-Browser/Network/GPU process:
-  - ASAN Read (web contents): x2 = $1,000
-  - ASAN Write/UAF (web contents): x5 = $2,500
-  - Controlled Read (web contents): x5 = $2,500
-  - Controlled Write (web contents): x10 = $5,000
-Renderer process:
-  - ASAN Read: x1 = $500
-  - ASAN Write/UAF: x2 = $1,000
-  - v8 logic (type confusion, incorrect values): x1 = $500
-  - v8 sandbox escape (with --sandbox-testing): x2 = $1,000
-  - v8 controlled sandbox escape: x5 = $2,500
+Report Quality 
+Reports should adhere to our formatting guidelines to be considered for an award any category.
 
-[V8 Sandbox escape requirements]
-- Must escape v8 sandbox in d8 with: v8_enable_sandbox=true, v8_enable_memory_corruption_api=true
-- Allowed flags: --expose-gc, --single-threaded, --fuzzing, --jit-fuzzing, --allow-natives-syntax
-- Must execute with --sandbox-testing
-- Report title must include [V8 Sandbox Bypass]
+Report Formatting & Attachments 
+Reports should be submitted in a way that makes it easy for us (and supporting friendly robots) to read and understand the bug. These form part of our baseline reporting requirements. We value brief reports and will consider over-long reports that make spurious claims about impact as being below baseline.
 
-[Exploit Bonuses]
-- Full Chain RCE (from web contents, Stable/Beta): $250,000
-- Full Chain RCE (requires MojoJS): $200,000
-- Max 4 exploit bonuses in 2026
+All reports must:
 
-[MiraclePtr Bypass]
-- Valid bypass of MiraclePtr: $250,128 bonus
-- Novel UAF demonstrating bypass + functional exploit: $85,000-$250,000 + $250,128 bonus
-- Max 4 MiraclePtr bypass rewards in 2026
-- Only eligible when ASAN shows "MiraclePtr: PROTECTED"
+Be brief and to the point
+Attach PoCs and traces as individual files
+Attach PoC extensions as individual files
+Use only Python to serve example files
+Avoid using Restricted content
+Be reliably reproducible in Chrome, d8 or a supported test binary.
+Custom test harnesses are not supported
+Attach a proof of concept (PoC) showing reachability in Chrome or d8
+Provide clear, concise, and ordered steps to reproduce
+Specify Chrome versions affected by the bug
+Reports of memory safety issues must:
 
-[Fuzzer Bonus]
-- 100% of reward value for bugs found by your fuzzer
-- Renderer/sandboxed process: reward multiplier +1
-- Browser/Network/GPU process: reward multiplier +2
-- NOT eligible if same bug found by Google fuzzers within 48 hours
+Attach a fully symbolized ASAN stack including all additional information, or a fully symbolized MTE stack, or a chrome://crashes id
+Attach a minimized PoC or patch
+Patches must use process-guards if code can run in multiple processes
+Attach Python serving code if necessary (other languages such as Node or PHP will not be accepted)
+Ensure that Chrome or d8 do not run in a harness
+Provide a minimized set of flags required for Chrome or d8
+Reports of Web Platform Security issues must:
 
-[Other vulnerability classes]
-- UXSS / Site isolation bypass: up to $10,000
-- User information disclosure: up to $5,000
-- Local privilege escalation: up to $5,000
-- Omnibox URL spoofing: up to $5,000
-- Web platform privilege escalation: up to $5,000
+Attach a minimized PoC or patch
+Patches must use process-guards if code can run in multiple processes
+Attach python serving code if necessary (other languages such as Node or PHP will not be accepted)
+Chrome or d8 should not run in harness
+A minimized set of flags required for Chrome or d8 should be provided
+Clearly and briefly describe the broken and expected behavior
+Reports of UI security issues must:
 
-[Below baseline reports - capped at $5,000]
-- No PoC attached
-- Only crash dump without symbols
-- Theoretical/speculative reports without demonstration
-- Over-long reports with spurious impact claims
+Attach a brief video demonstrating the problem
+Attach Python serving code if necessary (other languages such as Node or PHP will not be accepted)
+Attach a minimized PoC
+Clearly and briefly describe the broken and expected behavior
+Reports that do not meet our baseline requirements will be limited to a below baseline reward amount, no matter which category they meet.
 
-[Report must NOT]
-- Use LD_PRELOAD to simulate compromised renderer
-- Overstate impact
-- Use custom test harnesses
-- Use Node/PHP to serve files (Python only)
+Reports must not:
+
+Provide only a crash dump
+Provide a stack trace without symbols
+Be submitted without a Proof of Concept (PoC) or only provide a poor-quality PoC (e.g. a large fuzz file dump with no attempt at reduction)
+Simply suggest a theoretical or potential vulnerability based solely on static code analysis
+Patch unit or browser tests
+Use LD_PRELOAD to simulate a compromised renderer
+Overstate the impact of an issue
+Reports that consist of the above may not qualify for VRP rewards.
+
+Less convincing or more constrained bug submissions will likely qualify for reduced reward amounts, as chosen at the discretion of the reward panel.
+
+Consistently submitting below baseline reports may lead to suspension from the Chrome VRP.
+
+Memory Safety Reward Amounts 
+Memory safety issues are rewarded only if they reproduce on our infrastructure.
+
+Memory corruption per-bug rewards 
+The base reward amount for memory safety issues is $500, with multipliers below for the reachability, and level of exploitability, demonstrated on our infrastructure. The base reward may change from time to time. Changes to the base reward will be communicated on this page.
+
+To be eligible for a full reward, an issue must reproduce reliably on our infrastructure. Issues for which we do not have a harness will be limited to the base reward amount. The problem must be web accessible, i.e. it can be triggered by remote content. The issue must not be mitigated. Issues requiring substantial user interaction, installing an extension, triggered by browser shutdown or profile destruction are limited to the base reward amount.
+
+Browser / Network / GPU	ASAN Read	ASAN Write, UAF	Controlled Read	Controlled Write
+From web contents	x2 : $1,000	x5 : $2,500	x5 : $2,500	x10 : $5,000
+From MojoJS	x1 : $500	x3 : $1,500	x4 : $2,000	x5 : $2,500
+From patched renderer	x1 : $500	x2 : $1,000	N/A	N/A
+Other Processes	ASAN Read	ASAN Write, UAF	v8 logic	v8 sbox	v8 controlled sbox
+Renderer	x1 : $500	x2 : $1,000	x1 : $500	x2 : $1,000	x5 : $2,500
+Other Sandboxed	x1 : $500	x1 : $500	x1 : $500	N/A	N/A
+ASAN Reads: small ASAN reads, small OOB reads, and use-after-poison will be treated as ASAN READ.
+ASAN Write: other ASAN writes, UAFs, and pointer-sized ASAN reads are treated as ASAN WRITE.
+Controlled Read/Write: Demonstrated using a Dev, Beta, or Stable build of Chrome with a special flag. Not eligible when a renderer patch is required.
+v8 logic: Non-memory safety issues, incorrect values and type confusion DCHECKS in v8 are treated as v8 logic bugs.
+v8 sbox: A test case must be provided and successfully escape the v8 sandbox in a d8 build with v8_enable_sandbox = true and v8_enable_memory_corruption_api = true. Submissions may make use of --expose-gc, --single-threaded, --fuzzing, --jit-fuzzing, and/or --allow-natives-syntax, but otherwise cannot make use of any additional flags. The test case must be executed with --sandbox-testing. See the sandbox readme for full details. Submissions should be reported using the Chromium security bug reporting form and include [V8 Sandbox Bypass] in the report title.
+Below baseline: (not shown) Reports that do not consist of the characteristics of a baseline reward, or fail to attach PoCs and logs as file uploads, will be limited to the base reward amount.
+Mitigated issues: Moderately or highly mitigated issues require significant user interaction, winning a race, browser or profile shutdown, unusual flags, or unlikely workflows. Mitigated issues are eligible for only the base reward amount.
+Gemini & AI vulnerabilities 
+Ineligible AI report types 
+When submitting AI vulnerability reports, take note that non-qualifying issues and vulnerabilities are ineligible for reward. Reports that fall in these categories will not be accepted, and your report will be closed. Examples include:
+
+Generating violative, misleading, or factually incorrect content within the attacker's own session (including standard "jailbreaks" and "hallucinations"). Please report inappropriate content using in-product links.
+AI-generated content-based issues, including reports of AI safety or alignment bypasses. Please report this content using in-product links.
+Compliance, legal, or intellectual property issues, including issues relating to country/region-specific laws such as privacy or intellectual property laws. Please report those issues to the Report Content for Legal Reasons process.
+Preamble extraction without sensitive information leakage.
+Contexts in which a model's incorrect output or classification does not pose a compelling attack scenario or feasible path to user harm.
+Reports must be reproduced by the reporter and demonstrate a clear in-scope threat, risk, or vulnerability in plain language
+Please carefully review the list of non-qualifying vulnerabilities before filing your report.
+
+Qualifying AI Report Categories 
+Rogue Actions
+
+Attacks that modify the state of victim’s accounts or data with a clear security impact.
+
+Example: Indirect prompt injection allows an attacker to unexpectedly, and without confirmation, cause a payment, account deletion, or significant data corruption.
+
+Sensitive Data Exfiltration
+
+Attacks that leak victim’s SPII, PII, or other sensitive data without an effective opportunity for user approval.
+
+Example: Indirect prompt injection allows an attacker to unexpectedly, and without confirmation, summarize all of a victim's data on one site, and enter the summary in a different attacker-controlled site.
+
+Reward amounts for Gemini & AI Features in Chrome 
+Attacks with broader applicability or higher demonstrated user-harm will receive higher rewards.
+
+Scalable – Attack reproduces across hosting sites and is not strongly tied to the prompt entered by the user.
+Reliable – Attack reproduces on only some sites, and on 50%+ attempts, and is not strongly tied to the prompt entered by the user.
+We value honest assessments of attack reliability. Reports of High and Moderate impact issues that include accurate data on reliability may be eligible for an ASR (Attack Success Rate) bonus of $1,000.
+
+Category	High Impact && Reliable || Moderate Impact && Scalable	Moderate Impact && Reliable || High Impact && Unreliable
+Rogue Actions	Up to $20,000	Up to $5,000
+Sensitive Data Exfiltration	Up to $10,000	Up to $3,000
+Other vulnerability classes 
+For these classes of bugs, reports are expected to clearly demonstrate the exploitability and impact to a user, such as a convincing UI spoof or how user information would be disclosed.
+
+Category	High Impact
+UXSS || Site isolation bypass	Up to $10,000
+User information disclosure	Up to $5,000
+Local privilege escalation	Up to $5,000
+Omnibox URL Spoofing	Up to $5,000
+Web platform privilege escalation	Up to $5,000
+Valid reports of LPE vulnerabilities should demonstrate exploitability that breaks an OS security boundary using a Chrome component and is otherwise within Chrome's threat model.
+
+High impact: straight path to exploitability, demonstrable and significant user harm, remote exploitability, low to no preconditions to exploit, examples:
+
+Site isolation bypass
+Local privilege escalation
+User information disclosure / site isolation bypass
+Security UI spoof
+Security UI spoof
+User information disclosure
+Bugs with significant preconditions to exploit and no demonstrable risk to a user are not eligible for a Chrome VRP reward. In addition, the Chrome VRP Panel reserves the right to decline a reward for low-quality and speculative reports.
+
+Exploit Bonuses 
+Full Chain Exploit 
+A full chain exploit bonus is available for demonstrations of exploits against an active release of a Stable or Beta build of Chrome. Chrome must run on an up-to-date 64-bit operating system on supported platforms. Hardware mitigations such as MTE or CET must be enabled if supported by default by Chrome on the platform where the exploit is being demonstrated.
+
+$250,000 is payable for each exploit that succeeds from web contents, and $200,000 is payable for an exploit that requires MojoJS to be enabled. Other unsafe flags or debugging features are prohibited. Patches to the renderer are not accepted. Feature flags that have been enabled for any users on that version of Chrome are allowed.
+
+A maximum of four exploit bonuses will be rewarded in 2026 following the April rules update.
+
+MiraclePtr Bypass Reward 
+Code and issues in code protected by BackupRefPtr / MiraclePtr are expected to be resilient against the exploitation of UAFs in non-renderer processes. We no longer consider MiraclePtr-protected UAFs in non-renderer processes to be security bugs, but stability issues, as of M128. A valid bypass of MiraclePtr is now eligible for a reward of $250,128.
+
+Eligible bypass submissions should consist of the following:
+
+Link to the original issue or patch (if not yet publicly disclosed), if not a novel UAF. Otherwise provide a full report of the MiraclePtr-protected security bug
+
+Test case / PoC triggering the issue that demonstrates protection under BRP-ASAN with a MiraclePtr status of PROTECTED
+
+PoC that demonstrates the second-order primitive in the release build (controlled write or instruction pointer control)
+
+Complete, detailed write-up of the technique to bypass MiraclePtr
+
+Please note: the possibility of direct use of the zapped memory value ("\xef" bytes) during a UAF (e.g. as an enum value or size) is known and not itself considered a novel technique, and is not eligible for this bypass reward.
+
+We are interested to see examples of this technique being applied, and instead offer a reward of $70,000 - $90,000 for a novel PoC demonstrating a second-order primitive by applying this technique to a Miracle-Ptr protected issue, depending on the process. A novel demonstration presented with a functional exploit is eligible for a reward of $85,000 - $250,000.
+
+A bypass report must specifically explain or demonstrate how existing MiraclePtr protections can be bypassed. A UAF in a non-renderer process is only protected by MiraclePtr when the test case / PoC triggering it results in a status of "MiraclePtr: PROTECTED" when reproduced in a Chrome ASAN build. If the MiraclePtr status in ASAN output is NOT PROTECTED or MANUAL ANALYSIS REQUIRED, these issues are not considered protected by MiraclePtr and are not eligible for the bypass reward. Reports of UAFs in non-renderer processes that involve pointers not protected by MiraclePtr are eligible for the standard Chrome VRP reward amounts for that bug class, based on report quality and mitigations.
+
+If a complete, eligible bypass submission includes a novel UAF in a non-renderer process process, through which the bypass can be clearly and concisely demonstrated through a PoC or exploit, the $250,128 reward amount will be added as a bonus to the reward amount for the non-renderer process UAF. In this scenario, a novel UAF bug that demonstrates a MiraclePtr bypass is submitted with a functional exploit is eligible for a reward up to $85,000-$250,000 - in addition to the $250,128 bonus for the submission of an eligible bypass.
+
+A maximum of four MiraclePtr bypass rewards will be awarded following the April rules update in 2026.
+
+VRP decisions 
+The decision whether to grant a reward and the amount of the reward is always determined at the sole discretion of the reward panel. In particular, we may decide to pay higher rewards for unusually clever or severe vulnerabilities; decide that a single report actually constitutes multiple bugs; or that multiple reports are so closely related that they only warrant a single reward.
+
+Reports that do not meet the criteria for a baseline report do not provide sufficient detail to help developers rapidly address the security vulnerability. While these reports will still be evaluated for a potential VRP reward, they will receive significantly reduced reward amounts. If there is no evidence of exploitability before the issue is resolved or goes to the VRP panel, the report may not be eligible for a VRP reward.
+
+Reassessment of Reward Amount 
+If you believe there was an error in the VRP's reward decision, we are happy to reassess for a potential change in VRP reward amount. We base rewards on the information presented to us when the bug is submitted, and will not reconsider rewards based on information added after the initial report is submitted. Please follow the process outlined in the VRP FAQ.
+
+Report criteria for reward decisions 
+Chrome VRP reward decisions are made after the bug is reproduced on our infrastructure and fixed. Unless there are exceptional circumstances, Chrome VRP reward decisions are based solely on the information provided in the original report. Information provided after the bug is fully resolved or after the reward decision has been made will not be eligible for a reassessment of the reward decision.
+
+Functional exploits demonstrating RCE for a given bug will continue to be accepted for a higher reward after fix and Chrome VRP reward decision, until all outstanding exploit rewards have been claimed.
+
+Policy regarding unactionable reports and duplicates 
+To incentivize more complete and actionable reporting, the date and time a report is submitted in the bug tracker will not be the sole factor for determining whether a report is considered the first report of that security issue.
+
+A report is considered an actionable submission when all the information required to triage is provided in the report. This means that an earlier- received incomplete submission may be marked as a duplicate of a later received actionable submission. The later-received, actionable report will be considered the canonical report of that security issue.
+
+This policy is also applicable to shell reports, i.e. reports submitted without any information to gain a hold or timestamp at an earlier than actionable time. The report is not considered an actionable submission until it consists of at least some or most of the characteristics consistent with a baseline-quality report.
+
+If the first submission of a report is considered actionable and can be resolved based on the contents of the report, it will always be considered the first and canonical report of that security issue.
+
+Duplicate reports 
+Traditionally our policy related to duplicates has been strictly: "the earliest filed bug report in the bug tracker is considered the first report." Often we receive later versions of an earlier-reported security bug that are of such high quality that we use those components in advancing the triage or resolution of that issue. While this is against the core foundations of our policy around duplicate reports, we have made numerous exceptions and issued a small reward to the later reporter for their contributions that result in getting the security issue resolved.
+
+The Chrome VRP wants to better acknowledge and consistently reward these contributions. When a later-submitted report is of higher quality and is actively used by the security team or engineers to improve triage, reproduction, investigation, or root cause analysis of an earlier-reported issue, both reports may be eligible for the VRP reward -- with the total reward amount being divided between the two reports.
+
+This policy will only take effect when the security or engineering teams have actively used or acknowledged artifacts from a duplicate report to work toward resolution of a security issue. This policy is not applicable based solely on the existence of a duplicate report submitted in the same general period of time.
+
+Additional Chrome Rewards 
+Reports may be eligible for additional bonus rewards if they meet the conditions outlined in this section.
+
+Patch Bonus 
+More significant patches can be submitted under our Patch Reward Program.
+
+Fuzzer Bonus 
+The Chrome Fuzzer Program allows you to run fuzzers on Google hardware at Google scale across thousands of cores.
+
+You will receive 100% of the reward value for any bugs found by your fuzzer, plus a fuzzer bonus, provided the same bug was not found by one of our fuzzers within 48 hours.
+
+Fuzzer bonuses are tiered as follows:
+
+Renderer/sandboxed process bugs found by fuzzer: multiplier increased by 1
+Browser/Network/GPU process bugs found by fuzzer: multiplier increased by 2
+Please see the Chrome Fuzzer Program section for more details about the Chrome Fuzzing Program.
+
+Chrome Fuzzer Program 
+The Chrome Fuzzer Program allows you to run fuzzers on Google hardware at Google scale across thousands of cores. You receive 100% of the reward value for any bugs found by your fuzzer plus a bonus (see the Fuzzer Bonus section), provided the same bug was not found by one of our fuzzers within 48 hours.
+
+The Chrome Fuzzer Program is not accepting ClusterFuzz fuzzers at this time. New libFuzzer in-tree fuzzers can still be submitted, as specified below. Valid security bugs reported from previously submitted and accepted fuzzers are still eligible for VRP rewards and fuzzer bonuses.
+
+libFuzzer 
+LibFuzzer allows fuzz testing of individual components in the Chrome browser, and libFuzzer-based fuzzers are just as easy to write as unit tests. Any Chromium contributor can submit them to the Chromium codebase, which will be picked up and run continuously at scale by our fuzzing automation system, ClusterFuzz.
+
+ClusterFuzz 
+New ClusterFuzz fuzzers are not being accepted at this time. This section will be updated when this changes.
+
+If you have a fuzzer running as a part of Chrome Fuzzer Program, you will not receive a reward if one of our fuzzers finds the same bug within 48 hours, as ClusterFuzz may have simply scheduled your fuzzer before ours.
+
+All fuzzers run at Google's discretion.
 """
 
 
