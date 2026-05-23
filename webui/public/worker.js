@@ -395,23 +395,24 @@ function timeAgo(ts) {
 }
 
 function generateMdReport(c) {
-  return '# VRP Report: ' + (c.crash_type||'Unknown') + ' in ' + (c.component||'V8') + '\n\n'
-    + '## Summary\n'
-    + '- **Crash ID**: ' + c.id + '\n'
-    + '- **Type**: ' + (c.crash_type||'Unknown') + '\n'
-    + '- **CVSS**: ' + (c.cvss||0) + '\n'
-    + '- **Exploitability**: ' + (c.exploitability||'unknown') + '\n'
-    + '- **Component**: ' + (c.component||c.file||'V8 JIT') + '\n\n'
-    + '## Steps to Reproduce\n'
-    + '```javascript\n'
-    + (c.poc_js||c.js_code||'// PoC not available') + '\n'
-    + '```\n\n'
-    + '## ASAN Output\n'
-    + '```\n'
-    + (c.stderr||c.asan_log||'// Log not available') + '\n'
-    + '```\n\n'
-    + '## Impact\n'
-    + (c.attack_scenario||'Under investigation') + '\n';
+  var nl = String.fromCharCode(10);
+  return '# VRP Report: ' + (c.crash_type||'Unknown') + ' in ' + (c.component||'V8') + nl + nl
+    + '## Summary' + nl
+    + '- **Crash ID**: ' + c.id + nl
+    + '- **Type**: ' + (c.crash_type||'Unknown') + nl
+    + '- **CVSS**: ' + (c.cvss||0) + nl
+    + '- **Exploitability**: ' + (c.exploitability||'unknown') + nl
+    + '- **Component**: ' + (c.component||c.file||'V8 JIT') + nl + nl
+    + '## Steps to Reproduce' + nl
+    + '```javascript' + nl
+    + (c.poc_js||c.js_code||'// PoC not available') + nl
+    + '```' + nl + nl
+    + '## ASAN Output' + nl
+    + '```' + nl
+    + (c.stderr||c.asan_log||'// Log not available') + nl
+    + '```' + nl + nl
+    + '## Impact' + nl
+    + (c.attack_scenario||'Under investigation') + nl;
 }
 
 // ── fetch ────────────────────────────────────────────────
