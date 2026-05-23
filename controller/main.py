@@ -259,11 +259,16 @@ class V8FuzzController:
                 uptime_sec = int(_time.time() - start_time)
 
                 await self.reporter._push_to_kv('/report/stats', {
-                    'corpus':         corpus_size,
+                    'corpus_size':    corpus_size,
                     'uptime':         uptime_sec,
-                    'v8_crashes':     stats['v8_crashes'],
+                    'start_time':     start_time,
+                    'total_crashes':  stats['v8_crashes'],
+                    'unique_crashes': stats['vrp_candidates'],
                     'vrp_candidates': stats['vrp_candidates'],
                     'v8_execs':       stats.get('v8_execs', 0),
+                    'total_execs':    stats.get('v8_execs', 0),
+                    'exec_rate':      0,
+                    'active_workers': 4,
                     'updated_at':     _time.time(),
                 })
                 log.debug(f"Stats pushed: corpus={corpus_size} uptime={uptime_sec}s")
