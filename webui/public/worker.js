@@ -317,10 +317,10 @@ window.selectCrash = function(id) {
     </dl>
     \${(c.poc_js||c.js_code)?\`<div style="font-size:11px;color:#8b949e;margin:16px 0 4px">minimized PoC</div><pre class="poc-pre">\${(c.poc_js||c.js_code).replace(/</g,'&lt;')}</pre>\`:''}
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      <button class="btn danger" onclick="generateVrpReport('${c.id}')">generate VRP report</button>
+      <button class="btn danger" onclick="generateVrpReport('\${c.id}')">generate VRP report</button>
       <div style="display:flex;gap:8px">
-        <button class="btn" style="flex:1" onclick="downloadFile('${c.id}','js')">download .js</button>
-        <button class="btn" style="flex:1" onclick="downloadFile('${c.id}','log')">download log</button>
+        <button class="btn" style="flex:1" onclick="downloadFile('\${c.id}','js')">download .js</button>
+        <button class="btn" style="flex:1" onclick="downloadFile('\${c.id}','log')">download log</button>
       </div>
     </div>\`;
 };
