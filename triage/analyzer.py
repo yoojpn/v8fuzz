@@ -46,36 +46,60 @@ class _HTMLTextExtractor(HTMLParser):
 
 
 async def fetch_vrp_rules(url: str) -> str:
-    """bughunters.google.comからVRPルールを取得してテキスト化"""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                html = await resp.text()
-        parser = _HTMLTextExtractor()
-        parser.feed(html)
-        text = parser.get_text()
-        # 関連部分のみ抽出（長すぎるとトークン消費大）
-        lines = [l for l in text.split('\n') if l.strip()]
-        # 最大8000文字に制限
-        return '\n'.join(lines)[:8000]
-    except Exception as e:
-        log.warning(f"VRPルール取得失敗: {e} - ハードコードフォールバック使用")
-        return ""
+    """VRPルールを返す。bughunters.google.comはSPAのため静的fetchでは取得不可。
+    FALLBACK_RULESに最新ルールをハードコードして使用する。"""
+    log.info("VRPルール: ハードコードFALLBACK_RULESを使用")
+    return FALLBACK_RULES
 
 
 FALLBACK_RULES = """
-【Chrome VRP 対象】
-- Stable/Beta/Devチャンネルで再現するバグ
-- コミットから8日以上経過
-- 特殊フラグ不要（--experimental-*等は対象外）
-【報奨金目安】
-- RCE: $25,000〜$250,000
+=== Chrome VRP 公式ルール（2024年8月改定）===
+
+【対象条件】
+- Stable / Beta / Dev チャンネルで再現するバグ
+- コミットから8日以上経過したバグ（7日ルール + バッファ）
+- --experimental-* 等の特殊フラグが不要なバグ
+- サンドボックス内で完結するバグ（サンドボックス脱出は別カテゴリ）
+
+【対象外】
+- --experimental-* フラグが必要なバグ
+- コマンドライン引数でのみ発生するバグ（一部例外あり）
+- 既にパッチ済み・公開済みのバグ
+- Renderer プロセス内のみのバグ（サンドボックス脱出なし）
+
+【報奨金レンジ】
+- RCE（非サンドボックス・完全なコード実行）: $85,000〜$250,000
 - サンドボックス脱出: $50,000〜$100,000
-- OOB Write: $20,000〜$50,000
-- Type Confusion(JIT): $15,000〜$30,000
-- UAF: $10,000〜$30,000
-- OOB Read: $7,500〜$15,000
-- DoS/Low: $500〜$3,000
+- OOB Write（exploitable、JIT起因）: $20,000〜$50,000
+- Type Confusion（JITコンパイラ起因）: $15,000〜$30,000
+- UAF（Use-After-Free）: $10,000〜$30,000
+- OOB Read（情報漏洩につながる）: $7,500〜$15,000
+- Low severity / DoS / クラッシュのみ: $500〜$3,000
+
+【ボーナス】
+- Bisect Bonus: 導入コミットをgit bisectで特定した場合に追加報奨金
+- Patch Bonus: 修正パッチを同時提出した場合 $500〜$2,000 追加
+- 7日以内の新規バグ: 対象外（8日ルール）
+
+=== Apple Security Bounty（WebKit / JSC）===
+
+【対象条件】
+- Safari / WebKit を使用するApple製品上で再現するバグ
+- ASan・デバッグビルドでのみ再現するバグは原則対象外
+- 特殊フラグ・設定不要で再現すること
+
+【報奨金レンジ（2025年改定）】
+- WebKit RCE + サンドボックス脱出: 最大$300,000
+- Type Confusion（JIT起因）: $50,000〜$150,000
+- OOB Write（exploitable）: $50,000〜$100,000
+- OOB Read（情報漏洩）: $25,000〜$75,000
+- Memory Corruption（汎用）: $50,000〜$200,000
+- DoS / クラッシュのみ: $5,000〜$25,000
+
+【注意事項】
+- Appleへの報告書はコンパクトかつ具体的に（AI生成の冗長な文章は避ける）
+- PoC（再現コード）は必須
+- ASANログ・スタックトレースを必ず添付
 """
 
 
