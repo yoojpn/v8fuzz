@@ -494,6 +494,7 @@ export default {
       }
       if (path === '/report/stats' && request.method === 'POST') return await receiveStats(request, env);
       if (path === '/report/log'   && request.method === 'POST') return await receiveLog(request, env);
+      if (path === '/admin/reset'  && request.method === 'POST') return await resetAll(env);
 
       return json({ error: 'Not found' }, 404);
     } catch (e) {
@@ -533,6 +534,14 @@ async function appendLog(env, entry) {
   logs.push(entry);
   await env.KV.put('logs', JSON.stringify(logs.slice(-1000)));
 }
+async function resetAll(env) {
+  await env.KV.put('crashes', JSON.stringify([]));
+  await env.KV.put('logs',    JSON.stringify([]));
+  await env.KV.put('stats',   JSON.stringify({}));
+  await env.KV.put('targets', JSON.stringify([]));
+  return json({ ok: true, message: 'All data cleared' });
+}
+
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
     status,
