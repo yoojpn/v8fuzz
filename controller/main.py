@@ -212,14 +212,22 @@ class V8FuzzController:
         while self.running:
             try:
                 new_commits = await self.watcher.check()
+                # リスクスコア降順でソートし、上位3件のみseed生成
+                high_risk = sorted(
+                    [c for c in new_commits if c['risk_score'] >= 7.0],
+                    key=lambda c: c['risk_score'],
+                    reverse=True
+                )[:3]
                 for commit in new_commits:
                     log.info(
                         f"New commit detected: {commit['hash'][:8]} "
                         f"- {commit['message'][:60]}"
                     )
-                    # 危険なコミットにはseed生成を優先
-                    if commit['risk_score'] >= 7.0:
-                        await self.generator.generate_for_commit(commit)
+                for commit in high_risk:
+                    log.info(
+                        f"Commit seed gen: {commit['hash'][:8]} risk={commit['risk_score']}"
+                    )
+                    await self.generator.generate_for_commit(commit)
 
                 await asyncio.sleep(
                     self.config['commit_watcher']['check_interval']
