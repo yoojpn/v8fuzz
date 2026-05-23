@@ -42,8 +42,7 @@ class _HTMLTextExtractor(HTMLParser):
                 self._texts.append(text)
 
     def get_text(self):
-        return '
-'.join(self._texts)
+        return '\n'.join(self._texts)
 
 
 async def fetch_vrp_rules(url: str) -> str:
@@ -56,11 +55,9 @@ async def fetch_vrp_rules(url: str) -> str:
         parser.feed(html)
         text = parser.get_text()
         # 関連部分のみ抽出（長すぎるとトークン消費大）
-        lines = [l for l in text.split('
-') if l.strip()]
+        lines = [l for l in text.split('\n') if l.strip()]
         # 最大8000文字に制限
-        return '
-'.join(lines)[:8000]
+        return '\n'.join(lines)[:8000]
     except Exception as e:
         log.warning(f"VRPルール取得失敗: {e} - ハードコードフォールバック使用")
         return ""
