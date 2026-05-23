@@ -326,11 +326,10 @@ window.selectCrash = function(id) {
 };
 
 // ── download helpers ────────────────────────────────────
-async function downloadFile(crashId, type) {
+function downloadFile(crashId, type) {
   try {
-    const res = await fetch(API + '/report/crash/' + crashId);
-    if (!res) return;
-    const crash = await res.json();
+    const crash = allCrashes.find(c => c.id === crashId);
+    if (!crash) { alert('Crash not found'); return; }
     let content, filename, mime;
     if (type === 'js') {
       content = crash.poc_js || crash.js_code || '// no JS available';
@@ -349,12 +348,11 @@ async function downloadFile(crashId, type) {
   } catch(e) { alert('Download failed: ' + e.message); }
 }
 
-async function generateVrpReport(crashId) {
+function generateVrpReport(crashId) {
   try {
-    const res = await fetch(API + '/report/crash/' + crashId + '/vrp');
-    if (!res) return;
-    const data = await res.json();
-    const content = data.report || JSON.stringify(data, null, 2);
+    const crash = allCrashes.find(c => c.id === crashId);
+    if (!crash) { alert('Crash not found'); return; }
+    const content = crash.vrp_report || generateMdReport(crash);
     const blob = new Blob([content], {type: 'text/markdown'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
