@@ -133,8 +133,13 @@ def _run_differ(args: dict) -> Optional[dict]:
 
     # 出力が異なる = バグ候補
     # ただし両方空は除外（未実行や即終了）
+    # 両方SyntaxErrorも除外（--allow-natives-syntaxなしのフラグ問題）
     out_on  = result_on.get('stdout', '').strip()
     out_off = result_off.get('stdout', '').strip()
+    err_on  = result_on.get('stderr', '')
+    err_off = result_off.get('stderr', '')
+    if 'SyntaxError' in err_on and 'SyntaxError' in err_off:
+        return None  # 両方構文エラー = フラグ問題、バグではない
     if out_on != out_off and (out_on or out_off):
         differ_stderr = (
             f"[DIFFER] opt-on:  {repr(out_on[:200])}\n"
@@ -293,7 +298,13 @@ class WorkerPool:
 
     def _crash_signature(self, stderr: str, returncode: int = -1, seed_id: str = '') -> str:
         """スタックトレースからdedup用シグネチャを生成"""
-        lines = stderr.split('\n')
+        import re
+        # ファイルパス（/tmp/fuzz/PID_UUID.js）を除去してアドレス依存をなくす
+        normalized = re.sub(r'/tmp/[^\s\'"]+\.js', '<tmpfile>', stderr)
+        # メモリアドレスを除去
+        normalized = re.sub(r'0x[0-9a-fA-F]{6,}', '<addr>', normalized)
+
+        lines = normalized.split('\n')
         # V8/JSCのスタックフレームを抽出
         frames = [
             l for l in lines
@@ -304,9 +315,8 @@ class WorkerPool:
         ][:5]
 
         if not frames:
-            # スタックがなければreturncode + stderr先頭で代用
-            # seed_idは含めない（同じクラッシュが異なるseedで出た場合に重複排除できるよう）
-            frames = [f"rc={returncode}:{stderr[:300]}"]
+            # スタックがなければreturncode + 正規化済みstderr先頭で代用
+            frames = [f"rc={returncode}:{normalized[:300]}"]
 
         sig = '\n'.join(frames)
         return hashlib.md5(sig.encode()).hexdigest()
