@@ -69,7 +69,22 @@ class VRPReporter:
         report_md = self._generate_report(crash, analysis, bisect_commit, patch)
         self._save_report(crash['id'], report_md)
 
-        # 5. 通知
+        # 5. Cloudflare KVにcrashをpush
+        await self._push_to_kv('/api/crashes', {
+            'id':          crash['id'],
+            'engine':      crash.get('engine', 'v8'),
+            'crash_type':  analysis.get('crash_type', 'Unknown'),
+            'component':   analysis.get('affected_component', 'Unknown'),
+            'cvss':        analysis.get('cvss', 0.0),
+            'exploitability': analysis.get('exploitability', 'unknown'),
+            'reward_min':  analysis.get('estimated_reward_min', 0),
+            'reward_max':  analysis.get('estimated_reward_max', 0),
+            'vrp_eligible': analysis.get('vrp_eligible', False),
+            'timestamp':   crash.get('timestamp', time.time()),
+            'poc':         (crash.get('minimized_code') or crash.get('js_code', ''))[:500],
+        })
+
+        # 6. 通知
         cvss = analysis.get('cvss', 0.0)
         threshold = self.notify['thresholds']['immediate']
 
@@ -381,6 +396,16 @@ This vulnerability could allow an attacker to:
 </body></html>"""
 
         await self._send_email(subject, html)
+
+        # KVにstatsをpush
+        await self._push_to_kv('/api/stats', {
+            'v8_crashes':     stats['v8_crashes'],
+            'vrp_candidates': stats['vrp_candidates'],
+            'v8_execs':       stats['v8_execs'],
+            'api_spend':      stats['api_spend'],
+            'updated_at':     time.time(),
+        })
+
         log.info("Daily summary sent")
 
     async def _send_email(self, subject: str, html: str):
@@ -459,6 +484,32 @@ This vulnerability could allow an attacker to:
                 "UPDATE crashes SET patch_code=? WHERE id=?",
                 (patch, crash_id)
             )
+
+    async def _push_to_kv(self, path: str, payload: dict):
+        """Cloudflare Worker KVにデータをPOST"""
+        api = self.config.get('api', {})
+        worker_url = api.get('worker_url', '').rstrip('/')
+        secret = api.get('secret', '')
+        if not worker_url or not secret:
+            return
+        url = f"{worker_url}{path}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=payload,
+                    headers={
+                        'X-API-Secret': secret,
+                        'Content-Type': 'application/json',
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status not in (200, 201):
+                        log.warning(f"KV push failed: {path} status={resp.status}")
+                    else:
+                        log.debug(f"KV push ok: {path}")
+        except Exception as e:
+            log.warning(f"KV push error: {path} {e}")
 
     def _save_report(self, crash_id: str, report: str):
         """レポートをファイルとして保存"""
