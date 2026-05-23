@@ -185,23 +185,31 @@ class V8FuzzController:
 
     async def _triage_loop(self):
         """クラッシュ解析・VRP判定ループ"""
+        # Gemini free tier: RPM=20 → 最低3秒/req
+        # analyze()がAPIを叩く前にスロットルをかける
+        _TRIAGE_INTERVAL = 3.5  # 少し余裕を持たせる
         while self.running:
             try:
                 crash = await self.analyzer.dequeue()
                 if crash is None:
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(1)
                     continue
 
+                queue_depth = self.analyzer._queue.qsize()
+                if queue_depth > 0:
+                    log.debug(f"Triage queue depth: {queue_depth}")
+
+                # APIコール前にスロットル（RPM20対策）
+                await asyncio.sleep(_TRIAGE_INTERVAL)
+
                 result = await self.analyzer.analyze(crash)
-                # Gemini RPM20制限: 3秒/req のペースに抑える
-                await asyncio.sleep(3)
 
                 if result['vrp_eligible']:
                     log.info(
                         f"VRP candidate: {crash['id']} "
                         f"CVSS={result['cvss']} "
-                        f"est=${result['estimated_reward_min']}"
-                        f"~${result['estimated_reward_max']}"
+                        f"est=${result.get('estimated_reward_min',0)}"
+                        f"~${result.get('estimated_reward_max',0)}"
                     )
                     await self.reporter.handle(crash, result)
 

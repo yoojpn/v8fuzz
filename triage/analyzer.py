@@ -560,10 +560,23 @@ returncode: {crash.get('returncode', -1)}
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, json=payload, timeout=60
-                ) as resp:
-                    data = await resp.json()
+                # 429リトライ: 最大3回、指数バックオフ
+                for attempt in range(3):
+                    async with session.post(
+                        url, json=payload, timeout=60
+                    ) as resp:
+                        data = await resp.json()
+
+                    if resp.status == 429:
+                        retry_after = int(resp.headers.get('Retry-After', 60))
+                        log.warning(
+                            f"Gemini 429 on attempt {attempt+1}/3, "
+                            f"waiting {retry_after}s..."
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+
+                    break  # 429以外は即break
 
             # 429・エラーレスポンスのハンドリング
             if 'error' in data:

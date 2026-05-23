@@ -304,8 +304,9 @@ class WorkerPool:
         ][:5]
 
         if not frames:
-            # スタックがなければreturncode + seed_id + stderr先頭で代用（一意性確保）
-            frames = [f"rc={returncode}:seed={seed_id}:{stderr[:300]}"]
+            # スタックがなければreturncode + stderr先頭で代用
+            # seed_idは含めない（同じクラッシュが異なるseedで出た場合に重複排除できるよう）
+            frames = [f"rc={returncode}:{stderr[:300]}"]
 
         sig = '\n'.join(frames)
         return hashlib.md5(sig.encode()).hexdigest()
