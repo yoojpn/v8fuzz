@@ -51,7 +51,7 @@ def _run_single(args: dict) -> dict:
         cmd.append(path)
 
         env = dict(os.environ)
-        env['ASAN_OPTIONS'] = 'halt_on_error=1:symbolize=0'
+        env['ASAN_OPTIONS'] = 'halt_on_error=1:symbolize=1:detect_leaks=0'
         env['UBSAN_OPTIONS'] = 'halt_on_error=1'
 
         start = time.time()
@@ -258,7 +258,7 @@ class WorkerPool:
         """クラッシュを処理してdedup"""
         # スタックトレースのトップ5フレームでdedup
         stderr = result.get('stderr', '')
-        sig = self._crash_signature(stderr)
+        sig = self._crash_signature(stderr, result.get('returncode', -1), result.get('seed_id', ''))
 
         if sig in self._seen_crashes:
             return None  # 重複
@@ -279,8 +279,8 @@ class WorkerPool:
             'signature':   sig,
         }
 
-    def _crash_signature(self, stderr: str) -> str:
-        """スタックトレースからデdup用シグネチャを生成"""
+    def _crash_signature(self, stderr: str, returncode: int = -1, seed_id: str = '') -> str:
+        """スタックトレースからdedup用シグネチャを生成"""
         lines = stderr.split('\n')
         # V8/JSCのスタックフレームを抽出
         frames = [
@@ -292,8 +292,8 @@ class WorkerPool:
         ][:5]
 
         if not frames:
-            # スタックがなければreturncode + stderr先頭で代用
-            frames = [stderr[:200]]
+            # スタックがなければreturncode + seed_id + stderr先頭で代用（一意性確保）
+            frames = [f"rc={returncode}:seed={seed_id}:{stderr[:300]}"]
 
         sig = '\n'.join(frames)
         return hashlib.md5(sig.encode()).hexdigest()
