@@ -258,7 +258,7 @@ class V8FuzzController:
                 stats = self.reporter._get_daily_stats()
                 uptime_sec = int(_time.time() - start_time)
 
-                await self.reporter._push_to_kv('/api/stats', {
+                await self.reporter._push_to_kv('/report/stats', {
                     'corpus':         corpus_size,
                     'uptime':         uptime_sec,
                     'v8_crashes':     stats['v8_crashes'],

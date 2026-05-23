@@ -70,7 +70,7 @@ class VRPReporter:
         self._save_report(crash['id'], report_md)
 
         # 5. Cloudflare KVにcrashをpush
-        await self._push_to_kv('/api/crashes', {
+        await self._push_to_kv('/report/crash', {
             'id':          crash['id'],
             'engine':      crash.get('engine', 'v8'),
             'crash_type':  analysis.get('crash_type', 'Unknown'),
@@ -398,7 +398,7 @@ This vulnerability could allow an attacker to:
         await self._send_email(subject, html)
 
         # KVにstatsをpush
-        await self._push_to_kv('/api/stats', {
+        await self._push_to_kv('/report/stats', {
             'v8_crashes':     stats['v8_crashes'],
             'vrp_candidates': stats['vrp_candidates'],
             'v8_execs':       stats['v8_execs'],
