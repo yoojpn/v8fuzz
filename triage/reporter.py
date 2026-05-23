@@ -82,6 +82,10 @@ class VRPReporter:
             'vrp_eligible': analysis.get('vrp_eligible', False),
             'timestamp':   crash.get('timestamp', time.time()),
             'poc':         (crash.get('minimized_code') or crash.get('js_code', ''))[:500],
+            'js_code':     crash.get('minimized_code') or crash.get('js_code', ''),
+            'stderr':      crash.get('stderr', ''),
+            'minimized':   bool(crash.get('minimized_code')),
+            'vrp_report':  crash.get('vrp_report', ''),
         })
 
         # 6. 通知
