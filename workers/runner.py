@@ -195,7 +195,7 @@ class WorkerPool:
 
             for mutant in mutants:
                 args = {
-                    'binary':      self.eng_cfg['binary'],
+                    'binary':      self.eng_cfg.get('asan_binary') or self.eng_cfg['binary'],
                     'flags':       self.eng_cfg['flags'],
                     'js_code':     mutant,
                     'timeout_ms':  self.eng_cfg['timeout_ms'],
