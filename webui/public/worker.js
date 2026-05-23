@@ -404,13 +404,13 @@ function generateMdReport(c) {
     + '- **Exploitability**: ' + (c.exploitability||'unknown') + nl
     + '- **Component**: ' + (c.component||c.file||'V8 JIT') + nl + nl
     + '## Steps to Reproduce' + nl
-    + '```javascript' + nl
+    + '\u0060\u0060\u0060javascript' + nl
     + (c.poc_js||c.js_code||'// PoC not available') + nl
-    + '```' + nl + nl
+    + '\u0060\u0060\u0060' + nl + nl
     + '## ASAN Output' + nl
-    + '```' + nl
+    + '\u0060\u0060\u0060' + nl
     + (c.stderr||c.asan_log||'// Log not available') + nl
-    + '```' + nl + nl
+    + '\u0060\u0060\u0060' + nl + nl
     + '## Impact' + nl
     + (c.attack_scenario||'Under investigation') + nl;
 }
