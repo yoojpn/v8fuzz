@@ -53,53 +53,87 @@ async def fetch_vrp_rules(url: str) -> str:
 
 
 FALLBACK_RULES = """
-=== Chrome VRP 公式ルール（2024年8月改定）===
+=== Chrome Vulnerability Reward Program Rules (2026-04 updated) ===
 
-【対象条件】
-- Stable / Beta / Dev チャンネルで再現するバグ
-- コミットから8日以上経過したバグ（7日ルール + バッファ）
-- --experimental-* 等の特殊フラグが不要なバグ
-- サンドボックス内で完結するバグ（サンドボックス脱出は別カテゴリ）
+[Scope]
+- Any High or Critical severity bug in Chrome Browser (Stable, Beta, Dev channels)
+- Reports for bugs introduced within the last 7 days are NOT eligible
+- Experimental features, debugging features, and unsafe flags are NOT in scope
+- MiraclePtr-protected bugs are NOT considered security issues (not in scope)
+- Bugs in unlaunched features (behind disabled feature flags) are generally eligible
 
-【対象外】
-- --experimental-* フラグが必要なバグ
-- コマンドライン引数でのみ発生するバグ（一部例外あり）
-- 既にパッチ済み・公開済みのバグ
-- Renderer プロセス内のみのバグ（サンドボックス脱出なし）
+[Eligibility requirements]
+- Bug must be reachable on latest OS and 64-bit hardware
+- Must manifest in an active release channel of Chrome on a supported platform
+- Must be the first actionable report (duplicates not rewarded)
+- Speculative reports without PoC will be closed
 
-【報奨金レンジ】
-- RCE（非サンドボックス・完全なコード実行）: $85,000〜$250,000
-- サンドボックス脱出: $50,000〜$100,000
-- OOB Write（exploitable、JIT起因）: $20,000〜$50,000
-- Type Confusion（JITコンパイラ起因）: $15,000〜$30,000
-- UAF（Use-After-Free）: $10,000〜$30,000
-- OOB Read（情報漏洩につながる）: $7,500〜$15,000
-- Low severity / DoS / クラッシュのみ: $500〜$3,000
+[Report quality - REQUIRED for full reward]
+- Must be brief and to the point (over-long reports with spurious impact claims = below baseline)
+- Attach PoCs and traces as individual files
+- Be reliably reproducible in Chrome, d8, or a supported test binary
+- Provide clear, concise, ordered steps to reproduce
+- Specify Chrome versions affected
 
-【ボーナス】
-- Bisect Bonus: 導入コミットをgit bisectで特定した場合に追加報奨金
-- Patch Bonus: 修正パッチを同時提出した場合 $500〜$2,000 追加
-- 7日以内の新規バグ: 対象外（8日ルール）
+[Memory safety reports must include]
+- Fully symbolized ASAN stack trace (all frames)
+- Minimized PoC or patch
+- Must NOT provide only a crash dump or unsymbolized stack trace
 
-=== Apple Security Bounty（WebKit / JSC）===
+[Memory Safety Reward Amounts - base $500 with multipliers]
+Browser/Network/GPU process:
+  - ASAN Read (web contents): x2 = $1,000
+  - ASAN Write/UAF (web contents): x5 = $2,500
+  - Controlled Read (web contents): x5 = $2,500
+  - Controlled Write (web contents): x10 = $5,000
+Renderer process:
+  - ASAN Read: x1 = $500
+  - ASAN Write/UAF: x2 = $1,000
+  - v8 logic (type confusion, incorrect values): x1 = $500
+  - v8 sandbox escape (with --sandbox-testing): x2 = $1,000
+  - v8 controlled sandbox escape: x5 = $2,500
 
-【対象条件】
-- Safari / WebKit を使用するApple製品上で再現するバグ
-- ASan・デバッグビルドでのみ再現するバグは原則対象外
-- 特殊フラグ・設定不要で再現すること
+[V8 Sandbox escape requirements]
+- Must escape v8 sandbox in d8 with: v8_enable_sandbox=true, v8_enable_memory_corruption_api=true
+- Allowed flags: --expose-gc, --single-threaded, --fuzzing, --jit-fuzzing, --allow-natives-syntax
+- Must execute with --sandbox-testing
+- Report title must include [V8 Sandbox Bypass]
 
-【報奨金レンジ（2025年改定）】
-- WebKit RCE + サンドボックス脱出: 最大$300,000
-- Type Confusion（JIT起因）: $50,000〜$150,000
-- OOB Write（exploitable）: $50,000〜$100,000
-- OOB Read（情報漏洩）: $25,000〜$75,000
-- Memory Corruption（汎用）: $50,000〜$200,000
-- DoS / クラッシュのみ: $5,000〜$25,000
+[Exploit Bonuses]
+- Full Chain RCE (from web contents, Stable/Beta): $250,000
+- Full Chain RCE (requires MojoJS): $200,000
+- Max 4 exploit bonuses in 2026
 
-【注意事項】
-- Appleへの報告書はコンパクトかつ具体的に（AI生成の冗長な文章は避ける）
-- PoC（再現コード）は必須
-- ASANログ・スタックトレースを必ず添付
+[MiraclePtr Bypass]
+- Valid bypass of MiraclePtr: $250,128 bonus
+- Novel UAF demonstrating bypass + functional exploit: $85,000-$250,000 + $250,128 bonus
+- Max 4 MiraclePtr bypass rewards in 2026
+- Only eligible when ASAN shows "MiraclePtr: PROTECTED"
+
+[Fuzzer Bonus]
+- 100% of reward value for bugs found by your fuzzer
+- Renderer/sandboxed process: reward multiplier +1
+- Browser/Network/GPU process: reward multiplier +2
+- NOT eligible if same bug found by Google fuzzers within 48 hours
+
+[Other vulnerability classes]
+- UXSS / Site isolation bypass: up to $10,000
+- User information disclosure: up to $5,000
+- Local privilege escalation: up to $5,000
+- Omnibox URL spoofing: up to $5,000
+- Web platform privilege escalation: up to $5,000
+
+[Below baseline reports - capped at $5,000]
+- No PoC attached
+- Only crash dump without symbols
+- Theoretical/speculative reports without demonstration
+- Over-long reports with spurious impact claims
+
+[Report must NOT]
+- Use LD_PRELOAD to simulate compromised renderer
+- Overstate impact
+- Use custom test harnesses
+- Use Node/PHP to serve files (Python only)
 """
 
 
