@@ -482,7 +482,11 @@ class CrashAnalyzer:
             return {'skip': True, 'reason': '再現情報なし'}
 
         # differ_bugは特別扱い（クラッシュしないバグ）
+        # ただしjs_codeを実際にd8で実行してエラー/クラッシュが確認できた場合のみ
         if crash.get('differ_bug'):
+            # stderrに実際のエラー出力がある場合のみ通す
+            if not stderr or len(stderr.strip()) < 10:
+                return {'skip': True, 'reason': 'differ_bug but no stderr evidence'}
             return {'skip': False, 'reason': ''}
 
         # 明らかに悪意のないクラッシュ

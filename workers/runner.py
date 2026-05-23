@@ -132,13 +132,21 @@ def _run_differ(args: dict) -> Optional[dict]:
         return result_on if result_on['crashed'] else result_off
 
     # 出力が異なる = バグ候補
-    if result_on.get('stdout') != result_off.get('stdout'):
+    # ただし両方空は除外（未実行や即終了）
+    out_on  = result_on.get('stdout', '').strip()
+    out_off = result_off.get('stdout', '').strip()
+    if out_on != out_off and (out_on or out_off):
+        differ_stderr = (
+            f"[DIFFER] opt-on:  {repr(out_on[:200])}\n"
+            f"[DIFFER] opt-off: {repr(out_off[:200])}"
+        )
         return {
             **result_on,
             'crashed':        True,
             'differ_bug':     True,
-            'output_on':      result_on.get('stdout', ''),
-            'output_off':     result_off.get('stdout', ''),
+            'stderr':         differ_stderr,
+            'output_on':      out_on,
+            'output_off':     out_off,
             'worker_type':    'differ',
         }
 
