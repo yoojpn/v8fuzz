@@ -328,7 +328,7 @@ window.selectCrash = function(id) {
 // ── download helpers ────────────────────────────────────
 async function downloadFile(crashId, type) {
   try {
-    const res = await apiFetch('/report/crash/' + crashId);
+    const res = await fetch(API + '/report/crash/' + crashId);
     if (!res) return;
     const crash = await res.json();
     let content, filename, mime;
@@ -351,7 +351,7 @@ async function downloadFile(crashId, type) {
 
 async function generateVrpReport(crashId) {
   try {
-    const res = await apiFetch('/report/crash/' + crashId + '/vrp');
+    const res = await fetch(API + '/report/crash/' + crashId + '/vrp');
     if (!res) return;
     const data = await res.json();
     const content = data.report || JSON.stringify(data, null, 2);
